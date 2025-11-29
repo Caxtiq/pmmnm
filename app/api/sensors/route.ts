@@ -4,7 +4,7 @@ import { getAllSensors, createSensor, deleteSensor, Sensor } from '@/lib/db/sens
 // GET /api/sensors - Get all sensors
 export async function GET() {
     try {
-        const sensors = getAllSensors();
+        const sensors = await getAllSensors();
         return NextResponse.json({ sensors });
     } catch (error) {
         console.error('Failed to get sensors:', error);
@@ -16,7 +16,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
     try {
         const sensor: Sensor = await request.json();
-        const newSensor = createSensor(sensor);
+        const newSensor = await createSensor(sensor);
         return NextResponse.json({ sensor: newSensor }, { status: 201 });
     } catch (error) {
         console.error('Failed to create sensor:', error);
@@ -32,7 +32,7 @@ export async function DELETE(request: NextRequest) {
         if (!id) {
             return NextResponse.json({ error: 'Sensor ID required' }, { status: 400 });
         }
-        deleteSensor(id);
+        await deleteSensor(id);
         return NextResponse.json({ message: 'Sensor deleted' });
     } catch (error) {
         console.error('Failed to delete sensor:', error);

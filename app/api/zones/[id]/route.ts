@@ -9,7 +9,7 @@ export async function PATCH(
     try {
         const { id } = await params;
         const updates: Partial<Zone> = await request.json();
-        updateZone(id, updates);
+        await updateZone(id, updates);
         return NextResponse.json({ message: 'Zone updated' });
     } catch (error) {
         console.error('Failed to update zone:', error);
@@ -24,7 +24,7 @@ export async function DELETE(
 ) {
     try {
         const { id } = await params;
-        deleteZone(id);
+        await deleteZone(id);
         return NextResponse.json({ message: 'Zone deleted' });
     } catch (error) {
         console.error('Failed to delete zone:', error);

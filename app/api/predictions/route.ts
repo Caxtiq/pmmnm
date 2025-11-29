@@ -5,9 +5,9 @@ import { insertPrediction, getActivePredictions, deleteExpiredPredictions, Predi
 export async function GET() {
     try {
         // Clean up expired predictions first
-        deleteExpiredPredictions();
+        await deleteExpiredPredictions();
         
-        const predictions = getActivePredictions();
+        const predictions = await getActivePredictions();
         return NextResponse.json({ predictions });
     } catch (error) {
         console.error('Failed to get predictions:', error);
@@ -19,7 +19,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
     try {
         const prediction: Prediction = await request.json();
-        const id = insertPrediction(prediction);
+        const id = await insertPrediction(prediction);
         return NextResponse.json({ id }, { status: 201 });
     } catch (error) {
         console.error('Failed to insert prediction:', error);

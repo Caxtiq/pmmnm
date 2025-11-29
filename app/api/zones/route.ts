@@ -4,7 +4,7 @@ import { getAllZones, createZone, deleteAllZones, Zone } from '@/lib/db/zones';
 // GET /api/zones - Get all zones
 export async function GET() {
     try {
-        const zones = getAllZones();
+        const zones = await getAllZones();
         return NextResponse.json({ zones });
     } catch (error) {
         console.error('Failed to get zones:', error);
@@ -16,7 +16,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
     try {
         const zone: Zone = await request.json();
-        const newZone = createZone(zone);
+        const newZone = await createZone(zone);
         return NextResponse.json({ zone: newZone }, { status: 201 });
     } catch (error) {
         console.error('Failed to create zone:', error);
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
 // DELETE /api/zones - Delete all zones
 export async function DELETE() {
     try {
-        deleteAllZones();
+        await deleteAllZones();
         return NextResponse.json({ message: 'All zones deleted' });
     } catch (error) {
         console.error('Failed to delete zones:', error);

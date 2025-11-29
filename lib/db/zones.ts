@@ -1,4 +1,5 @@
-import db from './schema';
+import { getDatabase } from '../mongodb';
+import { COLLECTIONS } from './collections';
 
 export interface Zone {
     id: string;
@@ -13,54 +14,57 @@ export interface Zone {
 }
 
 // Get all zones
-export function getAllZones(): Zone[] {
-    const zones = db.zones.read();
-    return zones.sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0));
+export async function getAllZones(): Promise<Zone[]> {
+    const db = await getDatabase();
+    const zones = await db.collection(COLLECTIONS.ZONES)
+        .find({})
+        .sort({ createdAt: -1 })
+        .toArray();
+    return zones.map(z => ({ ...z, _id: undefined } as any));
 }
 
 // Get zones by type
-export function getZonesByType(type: 'flood' | 'outage'): Zone[] {
-    const zones = db.zones.read();
-    return zones
-        .filter((z: any) => z.type === type)
-        .sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0));
+export async function getZonesByType(type: 'flood' | 'outage'): Promise<Zone[]> {
+    const db = await getDatabase();
+    const zones = await db.collection(COLLECTIONS.ZONES)
+        .find({ type })
+        .sort({ createdAt: -1 })
+        .toArray();
+    return zones.map(z => ({ ...z, _id: undefined } as any));
 }
 
 // Create a new zone
-export function createZone(zone: Zone): Zone {
+export async function createZone(zone: Zone): Promise<Zone> {
+    const db = await getDatabase();
     const now = Date.now();
-    const zones = db.zones.read();
     const newZone = { ...zone, createdAt: now, updatedAt: now, riskLevel: zone.riskLevel || 50 };
-    zones.push(newZone);
-    db.zones.write(zones);
+    await db.collection(COLLECTIONS.ZONES).insertOne(newZone as any);
     return newZone;
 }
 
 // Update a zone
-export function updateZone(id: string, updates: Partial<Zone>): void {
-    const zones = db.zones.read();
-    const index = zones.findIndex((z: any) => z.id === id);
-    if (index !== -1) {
-        zones[index] = { ...zones[index], ...updates, updatedAt: Date.now() };
-        db.zones.write(zones);
-    }
+export async function updateZone(id: string, updates: Partial<Zone>): Promise<void> {
+    const db = await getDatabase();
+    await db.collection(COLLECTIONS.ZONES).updateOne(
+        { id },
+        { $set: { ...updates, updatedAt: Date.now() } }
+    );
 }
 
 // Delete a zone
-export function deleteZone(id: string): void {
-    const zones = db.zones.read();
-    const filtered = zones.filter((z: any) => z.id !== id);
-    db.zones.write(filtered);
+export async function deleteZone(id: string): Promise<void> {
+    const db = await getDatabase();
+    await db.collection(COLLECTIONS.ZONES).deleteOne({ id });
 }
 
 // Delete all zones
-export function deleteAllZones(): void {
-    db.zones.write([]);
+export async function deleteAllZones(): Promise<void> {
+    const db = await getDatabase();
+    await db.collection(COLLECTIONS.ZONES).deleteMany({});
 }
 
 // Delete zones by type
-export function deleteZonesByType(type: 'flood' | 'outage'): void {
-    const zones = db.zones.read();
-    const filtered = zones.filter((z: any) => z.type !== type);
-    db.zones.write(filtered);
+export async function deleteZonesByType(type: 'flood' | 'outage'): Promise<void> {
+    const db = await getDatabase();
+    await db.collection(COLLECTIONS.ZONES).deleteMany({ type });
 }

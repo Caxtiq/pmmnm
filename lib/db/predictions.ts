@@ -1,4 +1,5 @@
-import db from './schema';
+import { getDatabase } from '../mongodb';
+import { COLLECTIONS } from './collections';
 
 export interface Prediction {
     id?: number;
@@ -11,44 +12,64 @@ export interface Prediction {
 }
 
 // Insert prediction
-export function insertPrediction(prediction: Prediction): number {
-    const predictions = db.predictions.read();
-    const id = predictions.length > 0 ? Math.max(...predictions.map((p: any) => p.id || 0)) + 1 : 1;
+export async function insertPrediction(prediction: Prediction): Promise<number> {
+    const db = await getDatabase();
+    const collection = db.collection(COLLECTIONS.PREDICTIONS);
+    
+    // Get next ID
+    const lastDoc = await collection.findOne({}, { sort: { id: -1 } });
+    const id = lastDoc?.id ? lastDoc.id + 1 : 1;
+    
     const newPrediction = { ...prediction, id };
-    predictions.push(newPrediction);
-    db.predictions.write(predictions);
+    await collection.insertOne(newPrediction as any);
     return id;
 }
 
 // Get active predictions
-export function getActivePredictions(): Prediction[] {
+export async function getActivePredictions(): Promise<Prediction[]> {
+    const db = await getDatabase();
     const now = Date.now();
-    const predictions = db.predictions.read();
-    return predictions
-        .filter((p: any) => !p.expiresAt || p.expiresAt > now)
-        .sort((a: any, b: any) => b.timestamp - a.timestamp);
+    const predictions = await db.collection(COLLECTIONS.PREDICTIONS)
+        .find({
+            $or: [
+                { expiresAt: { $exists: false } },
+                { expiresAt: { $gt: now } }
+            ]
+        })
+        .sort({ timestamp: -1 })
+        .toArray();
+    return predictions.map(p => ({ ...p, _id: undefined } as any));
 }
 
 // Get predictions by type
-export function getPredictionsByType(type: 'flood' | 'outage'): Prediction[] {
+export async function getPredictionsByType(type: 'flood' | 'outage'): Promise<Prediction[]> {
+    const db = await getDatabase();
     const now = Date.now();
-    const predictions = db.predictions.read();
-    return predictions
-        .filter((p: any) => p.type === type && (!p.expiresAt || p.expiresAt > now))
-        .sort((a: any, b: any) => b.timestamp - a.timestamp);
+    const predictions = await db.collection(COLLECTIONS.PREDICTIONS)
+        .find({
+            type,
+            $or: [
+                { expiresAt: { $exists: false } },
+                { expiresAt: { $gt: now } }
+            ]
+        })
+        .sort({ timestamp: -1 })
+        .toArray();
+    return predictions.map(p => ({ ...p, _id: undefined } as any));
 }
 
 // Delete expired predictions
-export function deleteExpiredPredictions(): number {
+export async function deleteExpiredPredictions(): Promise<number> {
+    const db = await getDatabase();
     const now = Date.now();
-    const predictions = db.predictions.read();
-    const filtered = predictions.filter((p: any) => !p.expiresAt || p.expiresAt >= now);
-    const deleted = predictions.length - filtered.length;
-    db.predictions.write(filtered);
-    return deleted;
+    const result = await db.collection(COLLECTIONS.PREDICTIONS).deleteMany({
+        expiresAt: { $exists: true, $lt: now }
+    });
+    return result.deletedCount;
 }
 
 // Delete all predictions
-export function deleteAllPredictions(): void {
-    db.predictions.write([]);
+export async function deleteAllPredictions(): Promise<void> {
+    const db = await getDatabase();
+    await db.collection(COLLECTIONS.PREDICTIONS).deleteMany({});
 }

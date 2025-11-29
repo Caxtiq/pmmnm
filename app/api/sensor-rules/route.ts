@@ -4,7 +4,7 @@ import { getAllSensorRules, createSensorRule, updateSensorRule, deleteSensorRule
 // GET /api/sensor-rules - Get all sensor rules
 export async function GET() {
     try {
-        const rules = getAllSensorRules();
+        const rules = await getAllSensorRules();
         return NextResponse.json({ rules });
     } catch (error) {
         console.error('Failed to get sensor rules:', error);
@@ -16,7 +16,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
     try {
         const rule: SensorRule = await request.json();
-        const newRule = createSensorRule(rule);
+        const newRule = await createSensorRule(rule);
         return NextResponse.json({ rule: newRule }, { status: 201 });
     } catch (error) {
         console.error('Failed to create sensor rule:', error);
@@ -33,7 +33,7 @@ export async function PATCH(request: NextRequest) {
             return NextResponse.json({ error: 'Rule ID required' }, { status: 400 });
         }
         const updates: Partial<SensorRule> = await request.json();
-        updateSensorRule(id, updates);
+        await updateSensorRule(id, updates);
         return NextResponse.json({ message: 'Rule updated' });
     } catch (error) {
         console.error('Failed to update sensor rule:', error);
@@ -49,7 +49,7 @@ export async function DELETE(request: NextRequest) {
         if (!id) {
             return NextResponse.json({ error: 'Rule ID required' }, { status: 400 });
         }
-        deleteSensorRule(id);
+        await deleteSensorRule(id);
         return NextResponse.json({ message: 'Rule deleted' });
     } catch (error) {
         console.error('Failed to delete sensor rule:', error);

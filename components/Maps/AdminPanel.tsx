@@ -1,5 +1,8 @@
 'use client';
 import { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
+
+const WorkflowEditor = dynamic(() => import('./WorkflowEditor'), { ssr: false });
 
 interface Sensor {
     id: string;
@@ -19,6 +22,10 @@ interface SensorRule {
     actionType: 'flood' | 'outage';
     actionShape: 'circle' | 'line';
     enabled: boolean;
+    metadata?: {
+        condition?: 'active' | 'inactive';
+        points?: [number, number][];
+    };
 }
 
 interface AdminPanelProps {
@@ -32,7 +39,10 @@ interface AdminPanelProps {
 export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor, onAddSensorRule }: AdminPanelProps) {
     const [isOpen, setIsOpen] = useState(true);
     const [activeDrawMode, setActiveDrawMode] = useState<'flood' | 'outage' | null>(null);
-    const [activeTab, setActiveTab] = useState<'zones' | 'sensors'>('zones');
+    const [activeTab, setActiveTab] = useState<'zones' | 'workflow'>('zones');
+    const [panelWidth, setPanelWidth] = useState(384); // 96 * 4 = 384px (w-96)
+    const [workflowWidth, setWorkflowWidth] = useState(50); // 50% of screen
+    const [isResizing, setIsResizing] = useState(false);
     const [sensors, setSensors] = useState<Sensor[]>([]);
     const [sensorRules, setSensorRules] = useState<SensorRule[]>([]);
     const [isAddingSensor, setIsAddingSensor] = useState(false);
@@ -58,17 +68,56 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
     };
 
     // Load sensors and rules
-    useEffect(() => {
+    const reloadSensors = () => {
         fetch('/api/sensors')
             .then(res => res.json())
             .then(data => setSensors(data.sensors || []))
             .catch(err => console.error('Failed to load sensors:', err));
+    };
+
+    useEffect(() => {
+        reloadSensors();
 
         fetch('/api/sensor-rules')
             .then(res => res.json())
             .then(data => setSensorRules(data.rules || []))
             .catch(err => console.error('Failed to load sensor rules:', err));
     }, []);
+
+    // Handle panel resizing
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!isResizing) return;
+            
+            if (activeTab === 'workflow') {
+                // For workflow, resize as percentage of screen width
+                const percentage = (e.clientX / window.innerWidth) * 100;
+                if (percentage >= 30 && percentage <= 70) {
+                    setWorkflowWidth(percentage);
+                }
+            } else {
+                // For regular panel, resize as fixed width
+                const newWidth = e.clientX - 16; // 16px offset from left
+                if (newWidth >= 320 && newWidth <= 800) {
+                    setPanelWidth(newWidth);
+                }
+            }
+        };
+
+        const handleMouseUp = () => {
+            setIsResizing(false);
+        };
+
+        if (isResizing) {
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+        }
+
+        return () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [isResizing, activeTab]);
 
     const handleAddSensorClick = () => {
         if (!map) return;
@@ -157,31 +206,36 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
 
     return (
         <>
-            {/* Toggle Button */}
-            <button
-                onClick={() => setIsOpen(!isOpen)}
-                className="fixed top-4 left-4 z-50 bg-white rounded-lg shadow-lg p-3 hover:bg-gray-50 transition-colors"
-            >
-                <svg
-                    className="w-6 h-6"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+            {/* Toggle Button - Hide when workflow is active */}
+            {activeTab !== 'workflow' && (
+                <button
+                    onClick={() => setIsOpen(!isOpen)}
+                    className="fixed top-4 left-4 z-50 bg-white rounded-lg shadow-lg p-3 hover:bg-gray-50 transition-colors"
                 >
-                    <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M4 6h16M4 12h16M4 18h16"
-                    />
-                </svg>
-            </button>
+                    <svg
+                        className="w-6 h-6"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                    >
+                        <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M4 6h16M4 12h16M4 18h16"
+                        />
+                    </svg>
+                </button>
+            )}
 
             {/* Admin Panel */}
-            {isOpen && (
-                <div className="fixed top-20 left-4 z-40 bg-white rounded-lg shadow-xl w-96 max-h-[85vh] overflow-y-auto">
-                    <div className="p-6">
-                        <h2 className="text-2xl font-bold mb-4 text-gray-800">Admin Panel</h2>
+            {isOpen && activeTab !== 'workflow' && (
+                <div 
+                    className="fixed top-20 left-4 z-40 shadow-xl max-h-[85vh] flex overflow-hidden rounded-lg"
+                    style={{ width: `${panelWidth}px` }}
+                >
+                    <div className="flex-1 overflow-y-auto p-6 bg-white">
+                        <h2 className="text-2xl font-bold mb-4 text-gray-800">Bảng Quản Trị</h2>
                         
                         {/* Tabs */}
                         <div className="flex gap-2 mb-6 border-b">
@@ -193,17 +247,17 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                         : 'text-gray-600 hover:text-gray-800'
                                 }`}
                             >
-                                Zones
+                                Khu Vực
                             </button>
                             <button
-                                onClick={() => setActiveTab('sensors')}
+                                onClick={() => setActiveTab('workflow')}
                                 className={`pb-2 px-4 font-medium transition-colors ${
-                                    activeTab === 'sensors'
-                                        ? 'border-b-2 border-green-500 text-green-600'
+                                    activeTab === 'workflow'
+                                        ? 'border-b-2 border-purple-500 text-purple-600'
                                         : 'text-gray-600 hover:text-gray-800'
                                 }`}
                             >
-                                Sensors
+                                ⚙️ Cảm Biến & Quy Trình
                             </button>
                         </div>
 
@@ -211,7 +265,7 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                             <>
                                 {/* Drawing Tools */}
                                 <div className="mb-6">
-                            <h3 className="text-lg font-semibold mb-3 text-gray-700">Flood Risk</h3>
+                            <h3 className="text-lg font-semibold mb-3 text-gray-700">Nguy Cơ Lũ Lụt</h3>
                             <div className="space-y-2">
                                 <button
                                     onClick={() => handleDrawClick('flood', 'circle')}
@@ -223,7 +277,7 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                 >
                                     <div className="flex items-center justify-center gap-2">
                                         <div className="w-4 h-4 bg-blue-500 rounded-full"></div>
-                                        Draw Zone (Circle)
+                                        Vẽ Khu Vực (Hình Tròn)
                                     </div>
                                 </button>
                                 <button
@@ -232,14 +286,14 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                 >
                                     <div className="flex items-center justify-center gap-2">
                                         <div className="w-6 h-1 bg-blue-500"></div>
-                                        Draw Route (Line)
+                                        Vẽ Tuyến Đường (Đường Thẳng)
                                     </div>
                                 </button>
                             </div>
                         </div>
 
                         <div className="mb-6">
-                            <h3 className="text-lg font-semibold mb-3 text-gray-700">Power Outage</h3>
+                            <h3 className="text-lg font-semibold mb-3 text-gray-700">Nguy Cơ Tắc Đường</h3>
                             <div className="space-y-2">
                                 <button
                                     onClick={() => handleDrawClick('outage', 'circle')}
@@ -251,7 +305,7 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                 >
                                     <div className="flex items-center justify-center gap-2">
                                         <div className="w-4 h-4 bg-red-500 rounded-full"></div>
-                                        Draw Zone (Circle)
+                                        Vẽ Khu Vực (Hình Tròn)
                                     </div>
                                 </button>
                                 <button
@@ -260,7 +314,7 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                 >
                                     <div className="flex items-center justify-center gap-2">
                                         <div className="w-6 h-1 bg-red-500"></div>
-                                        Draw Route (Line)
+                                        Vẽ Tuyến Đường (Đường Thẳng)
                                     </div>
                                 </button>
                             </div>
@@ -268,33 +322,33 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
 
                         {/* Zone Management */}
                         <div className="mb-6">
-                            <h3 className="text-lg font-semibold mb-3 text-gray-700">Zone Management</h3>
+                            <h3 className="text-lg font-semibold mb-3 text-gray-700">Quản Lý Khu Vực</h3>
                             <button
                                 onClick={onClearZones}
                                 className="w-full p-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors"
                             >
-                                Clear All Zones
+                                Xóa Tất Cả Khu Vực
                             </button>
                         </div>
 
                         {/* Instructions */}
                         <div className="bg-gray-50 p-4 rounded-lg">
-                            <h3 className="text-sm font-semibold mb-2 text-gray-700">Instructions</h3>
+                            <h3 className="text-sm font-semibold mb-2 text-gray-700">Hướng Dẫn</h3>
                             <div className="text-sm text-gray-600 space-y-2">
                                 <div>
-                                    <p className="font-semibold">Zone (Circle):</p>
+                                    <p className="font-semibold">Khu Vực (Hình Tròn):</p>
                                     <ul className="space-y-1 ml-2">
-                                        <li>• Click to set center</li>
-                                        <li>• Move to adjust radius</li>
-                                        <li>• Click to finish area</li>
+                                        <li>• Nhấp để đặt tâm</li>
+                                        <li>• Di chuyển để điều chỉnh bán kính</li>
+                                        <li>• Nhấp để hoàn tất khu vực</li>
                                     </ul>
                                 </div>
                                 <div>
-                                    <p className="font-semibold">Route (Line):</p>
+                                    <p className="font-semibold">Tuyến Đường (Đường Thẳng):</p>
                                     <ul className="space-y-1 ml-2">
-                                        <li>• Click to add points</li>
-                                        <li>• Double-click or Enter to finish</li>
-                                        <li>• ESC to cancel</li>
+                                        <li>• Nhấp để thêm điểm</li>
+                                        <li>• Nhấp đúp hoặc Enter để hoàn tất</li>
+                                        <li>• ESC để hủy</li>
                                     </ul>
                                 </div>
                             </div>
@@ -302,30 +356,30 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
 
                         {/* Legend */}
                         <div className="mt-4 bg-gray-50 p-4 rounded-lg">
-                            <h3 className="text-sm font-semibold mb-2 text-gray-700">Legend</h3>
+                            <h3 className="text-sm font-semibold mb-2 text-gray-700">Chú Giải</h3>
                             <div className="space-y-2 text-sm">
                                 <div className="flex items-center gap-2">
                                     <div className="w-4 h-4 bg-blue-500 rounded-full opacity-50"></div>
-                                    <span className="text-gray-600">Flood Risk Zone</span>
+                                    <span className="text-gray-600">Khu Vực Nguy Cơ Lũ</span>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <div className="w-6 h-1 bg-blue-500"></div>
-                                    <span className="text-gray-600">Flood Route</span>
+                                    <span className="text-gray-600">Tuyến Đường Nguy Cơ Lũ</span>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <div className="w-4 h-4 bg-red-500 rounded-full opacity-50"></div>
-                                    <span className="text-gray-600">Outage Zone</span>
+                                    <span className="text-gray-600">Khu Vực Nguy Cơ Tắc Đường</span>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <div className="w-6 h-1 bg-red-500"></div>
-                                    <span className="text-gray-600">Outage Route</span>
+                                    <span className="text-gray-600">Tuyến Đường Nguy Cơ Tắc Đường</span>
                                 </div>
                             </div>
                         </div>
                             </>
                         )}
 
-                        {activeTab === 'sensors' && (
+                        {activeTab === 'workflow-sensors-old-remove-this' && (
                             <>
                                 {/* Add Sensor Card */}
                                 <div className="mb-6 border-2 border-green-200 rounded-xl bg-gradient-to-br from-green-50 to-emerald-50 p-5 shadow-sm">
@@ -333,17 +387,17 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                         <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white text-lg">
                                             📡
                                         </div>
-                                        <h3 className="text-lg font-bold text-gray-800">Add New Sensor</h3>
+                                        <h3 className="text-lg font-bold text-gray-800">Thêm Cảm Biến Mới</h3>
                                     </div>
                                     
                                     <div className="space-y-3">
                                         <div>
                                             <label className="block text-sm font-semibold text-gray-700 mb-1">
-                                                Sensor Name *
+                                                Tên Cảm Biến *
                                             </label>
                                             <input
                                                 type="text"
-                                                placeholder="e.g., River Bank Station A"
+                                                placeholder="Ví dụ: Trạm Bờ Sông A"
                                                 value={newSensor.name}
                                                 onChange={(e) => setNewSensor({ ...newSensor, name: e.target.value })}
                                                 className="w-full p-3 border-2 border-gray-200 rounded-lg focus:border-green-400 focus:outline-none transition-colors"
@@ -353,27 +407,27 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                         <div className="grid grid-cols-2 gap-3">
                                             <div>
                                                 <label className="block text-sm font-semibold text-gray-700 mb-1">
-                                                    Sensor Type
+                                                    Loại Cảm Biến
                                                 </label>
                                                 <select
                                                     value={newSensor.type}
                                                     onChange={(e) => setNewSensor({ ...newSensor, type: e.target.value as any })}
                                                     className="w-full p-3 border-2 border-gray-200 rounded-lg focus:border-green-400 focus:outline-none transition-colors bg-white"
                                                 >
-                                                    <option value="water_level">💧 Water Level</option>
-                                                    <option value="temperature">🌡️ Temperature</option>
-                                                    <option value="humidity">💨 Humidity</option>
+                                                    <option value="water_level">💧 Mực Nước</option>
+                                                    <option value="temperature">🌡️ Nhiệt Độ</option>
+                                                    <option value="humidity">💨 Độ Ẩm</option>
                                                 </select>
                                             </div>
 
                                             <div>
                                                 <label className="block text-sm font-semibold text-gray-700 mb-1">
-                                                    Threshold
+                                                    Ngưỡng Cảnh Báo
                                                 </label>
                                                 <input
                                                     type="number"
                                                     step="0.1"
-                                                    placeholder="e.g., 5.5"
+                                                    placeholder="Ví dụ: 5.5"
                                                     value={newSensor.threshold || ''}
                                                     onChange={(e) => setNewSensor({ ...newSensor, threshold: parseFloat(e.target.value) || 0 })}
                                                     className="w-full p-3 border-2 border-gray-200 rounded-lg focus:border-green-400 focus:outline-none transition-colors"
@@ -383,7 +437,7 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
 
                                         <div>
                                             <label className="block text-sm font-semibold text-gray-700 mb-1">
-                                                Alert Type
+                                                Loại Cảnh Báo
                                             </label>
                                             <div className="grid grid-cols-2 gap-2">
                                                 <button
@@ -395,7 +449,7 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                                             : 'bg-white border-2 border-blue-200 text-blue-700 hover:border-blue-400'
                                                     }`}
                                                 >
-                                                    🌊 Flood
+                                                    🌊 Lũ Lụt
                                                 </button>
                                                 <button
                                                     type="button"
@@ -406,7 +460,7 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                                             : 'bg-white border-2 border-red-200 text-red-700 hover:border-red-400'
                                                     }`}
                                                 >
-                                                    ⚡ Outage
+                                                    ⚡ Tắc Đường
                                                 </button>
                                             </div>
                                         </div>
@@ -422,12 +476,12 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                                     : 'bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:shadow-xl hover:scale-105'
                                             }`}
                                         >
-                                            {isAddingSensor ? '📍 Click on Map to Place Sensor...' : '🗺️ Place Sensor on Map'}
+                                            {isAddingSensor ? '📍 Nhấp Vào Bản Đồ Để Đặt Cảm Biến...' : '🗺️ Đặt Cảm Biến Trên Bản Đồ'}
                                         </button>
 
                                         {isAddingSensor && (
                                             <p className="text-sm text-yellow-700 bg-yellow-100 p-2 rounded text-center animate-pulse">
-                                                ⬆️ Click anywhere on the map to place your sensor
+                                                ⬆️ Nhấp vào bất kỳ đâu trên bản đồ để đặt cảm biến
                                             </p>
                                         )}
                                     </div>
@@ -437,7 +491,7 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                 <div className="mb-6">
                                     <div className="flex items-center justify-between mb-3">
                                         <h3 className="text-lg font-bold text-gray-800">
-                                            📍 Deployed Sensors
+                                            📍 Cảm Biến Đã Triển Khai
                                             <span className="ml-2 text-sm font-normal bg-gray-200 px-2 py-1 rounded-full">
                                                 {sensors.length}
                                             </span>
@@ -457,10 +511,10 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                                         </div>
                                                         <div className="ml-7 space-y-1">
                                                             <p className="text-sm text-gray-600">
-                                                                <span className="font-semibold">Type:</span> {sensor.type.replace('_', ' ')}
+                                                                <span className="font-semibold">Loại:</span> {sensor.type.replace('_', ' ')}
                                                             </p>
                                                             <p className="text-sm text-gray-600">
-                                                                <span className="font-semibold">Threshold:</span> {sensor.threshold}
+                                                                <span className="font-semibold">Ngưỡng:</span> {sensor.threshold}
                                                             </p>
                                                             <p className="text-xs text-gray-500 font-mono">
                                                                 {sensor.location[1].toFixed(5)}, {sensor.location[0].toFixed(5)}
@@ -470,7 +524,7 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                                                     ? 'bg-blue-100 text-blue-700' 
                                                                     : 'bg-red-100 text-red-700'
                                                             }`}>
-                                                                {sensor.actionType === 'flood' ? '🌊 Flood Alert' : '⚡ Outage Alert'}
+                                                                {sensor.actionType === 'flood' ? '🌊 Cảnh Báo Lũ' : '⚡ Cảnh Báo Tắc Đường'}
                                                             </span>
                                                         </div>
                                                     </div>
@@ -489,8 +543,8 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                         {sensors.length === 0 && (
                                             <div className="text-center py-8 text-gray-400">
                                                 <div className="text-4xl mb-2">📡</div>
-                                                <p className="text-sm">No sensors deployed yet</p>
-                                                <p className="text-xs mt-1">Add your first sensor above</p>
+                                                <p className="text-sm">Chưa có cảm biến nào được triển khai</p>
+                                                <p className="text-xs mt-1">Thêm cảm biến đầu tiên của bạn ở trên</p>
                                             </div>
                                         )}
                                     </div>
@@ -505,7 +559,7 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                         <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center text-white text-lg">
                                             ⚙️
                                         </div>
-                                        <h3 className="text-lg font-bold text-gray-800">Automation Rules</h3>
+                                        <h3 className="text-lg font-bold text-gray-800">Quy Tắc Tự Động</h3>
                                     </div>
                                     
                                     {!isAddingRule ? (
@@ -518,17 +572,17 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                                     : 'bg-gradient-to-r from-purple-100 to-indigo-100 text-purple-700 hover:from-purple-200 hover:to-indigo-200 border-2 border-purple-300 hover:shadow-lg'
                                             }`}
                                         >
-                                            + Create New Rule
+                                            + Tạo Quy Tắc Mới
                                         </button>
                                     ) : (
                                         <div className="space-y-4 bg-gradient-to-br from-purple-50 to-indigo-50 p-5 rounded-xl border-2 border-purple-200">
                                             <div>
                                                 <label className="block text-sm font-semibold text-gray-700 mb-1">
-                                                    Rule Name *
+                                                    Tên Quy Tắc *
                                                 </label>
                                                 <input
                                                     type="text"
-                                                    placeholder="e.g., High Water Alert"
+                                                    placeholder="Ví dụ: Cảnh Báo Nước Dâng Cao"
                                                     value={newRule.name}
                                                     onChange={(e) => setNewRule({ ...newRule, name: e.target.value })}
                                                     className="w-full p-3 border-2 border-gray-200 rounded-lg focus:border-purple-400 focus:outline-none transition-colors"
@@ -537,7 +591,7 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
 
                                             <div>
                                                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                                    Rule Type
+                                                    Loại Quy Tắc
                                                 </label>
                                                 <div className="grid grid-cols-2 gap-2">
                                                     <button
@@ -549,7 +603,7 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                                                 : 'bg-white border-2 border-purple-200 text-purple-700 hover:border-purple-400'
                                                         }`}
                                                     >
-                                                        Single Sensor
+                                                        Một Cảm Biến
                                                     </button>
                                                     <button
                                                         type="button"
@@ -560,21 +614,21 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                                                 : 'bg-white border-2 border-purple-200 text-purple-700 hover:border-purple-400'
                                                         }`}
                                                     >
-                                                        Two Sensors
+                                                        Hai Cảm Biến
                                                     </button>
                                                 </div>
                                             </div>
                                             
                                             <div>
                                                 <label className="block text-sm font-semibold text-gray-700 mb-1">
-                                                    {newRule.type === '1-sensor' ? 'Select Sensor' : 'First Sensor'}
+                                                    {newRule.type === '1-sensor' ? 'Chọn Cảm Biến' : 'Cảm Biến Thứ Nhất'}
                                                 </label>
                                                 <select
                                                     value={newRule.sensors[0] || ''}
                                                     onChange={(e) => setNewRule({ ...newRule, sensors: [e.target.value, newRule.sensors[1] || ''].filter(Boolean) })}
                                                     className="w-full p-3 border-2 border-gray-200 rounded-lg focus:border-purple-400 focus:outline-none transition-colors bg-white"
                                                 >
-                                                    <option value="">-- Choose a sensor --</option>
+                                                    <option value="">-- Chọn cảm biến --</option>
                                                     {sensors.map(s => (
                                                         <option key={s.id} value={s.id}>
                                                             {s.type === 'water_level' ? '💧' : s.type === 'temperature' ? '🌡️' : '💨'} {s.name}
@@ -587,7 +641,7 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                                 <>
                                                     <div>
                                                         <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                                            Logic Operator
+                                                            Toán Tử Logic
                                                         </label>
                                                         <div className="grid grid-cols-2 gap-2">
                                                             <button
@@ -599,7 +653,7 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                                                         : 'bg-white border-2 border-indigo-200 text-indigo-700 hover:border-indigo-400'
                                                                 }`}
                                                             >
-                                                                AND (Both)
+                                                                VÀ (Cả Hai)
                                                             </button>
                                                             <button
                                                                 type="button"
@@ -610,21 +664,21 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                                                         : 'bg-white border-2 border-indigo-200 text-indigo-700 hover:border-indigo-400'
                                                                 }`}
                                                             >
-                                                                OR (Either)
+                                                                HOẶC (Một Trong Hai)
                                                             </button>
                                                         </div>
                                                     </div>
                                                     
                                                     <div>
                                                         <label className="block text-sm font-semibold text-gray-700 mb-1">
-                                                            Second Sensor
+                                                            Cảm Biến Thứ Hai
                                                         </label>
                                                         <select
                                                             value={newRule.sensors[1] || ''}
                                                             onChange={(e) => setNewRule({ ...newRule, sensors: [newRule.sensors[0] || '', e.target.value].filter(Boolean) })}
                                                             className="w-full p-3 border-2 border-gray-200 rounded-lg focus:border-purple-400 focus:outline-none transition-colors bg-white"
                                                         >
-                                                            <option value="">-- Choose a sensor --</option>
+                                                            <option value="">-- Chọn cảm biến --</option>
                                                             {sensors.filter(s => s.id !== newRule.sensors[0]).map(s => (
                                                                 <option key={s.id} value={s.id}>
                                                                     {s.type === 'water_level' ? '💧' : s.type === 'temperature' ? '🌡️' : '💨'} {s.name}
@@ -637,7 +691,7 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
 
                                             <div>
                                                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                                    Action to Take
+                                                    Hành Động Thực Hiện
                                                 </label>
                                                 <div className="grid grid-cols-2 gap-2 mb-2">
                                                     <button
@@ -649,7 +703,7 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                                                 : 'bg-white border-2 border-blue-200 text-blue-700 hover:border-blue-400'
                                                         }`}
                                                     >
-                                                        🌊 Flood
+                                                        🌊 Lũ Lụt
                                                     </button>
                                                     <button
                                                         type="button"
@@ -660,7 +714,7 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                                                 : 'bg-white border-2 border-red-200 text-red-700 hover:border-red-400'
                                                         }`}
                                                     >
-                                                        ⚡ Outage
+                                                        ⚡ Tắc Đường
                                                     </button>
                                                 </div>
                                                 <div className="grid grid-cols-2 gap-2">
@@ -673,7 +727,7 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                                                 : 'bg-white border-2 border-gray-300 text-gray-700 hover:border-gray-500'
                                                         }`}
                                                     >
-                                                        ⭕ Circle
+                                                        ⭕ Hình Tròn
                                                     </button>
                                                     <button
                                                         type="button"
@@ -684,7 +738,7 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                                                 : 'bg-white border-2 border-gray-300 text-gray-700 hover:border-gray-500'
                                                         }`}
                                                     >
-                                                        ━ Line
+                                                        ━ Đường Thẳng
                                                     </button>
                                                 </div>
                                             </div>
@@ -699,7 +753,7 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                                             : 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white hover:shadow-lg hover:scale-105'
                                                     }`}
                                                 >
-                                                    ✓ Create Rule
+                                                    ✓ Tạo Quy Tắc
                                                 </button>
                                                 <button
                                                     onClick={() => {
@@ -715,7 +769,7 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                                     }}
                                                     className="px-6 p-3 bg-white border-2 border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
                                                 >
-                                                    Cancel
+                                                    Hủy
                                                 </button>
                                             </div>
                                         </div>
@@ -726,7 +780,7 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                 {sensorRules.length > 0 && (
                                     <div className="mb-6">
                                         <h4 className="text-sm font-bold text-gray-700 mb-3 uppercase tracking-wide">
-                                            Active Rules ({sensorRules.length})
+                                            Quy Tắc Hoạt Động ({sensorRules.length})
                                         </h4>
                                         <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
                                             {sensorRules.map(rule => {
@@ -748,12 +802,12 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                                                     </span>
                                                                 </div>
                                                                 <p className="text-sm text-gray-600 mb-1">
-                                                                    <span className="font-semibold">Trigger:</span> {sensorNames}
+                                                                    <span className="font-semibold">Kích Hoạt:</span> {sensorNames}
                                                                 </p>
                                                                 <p className="text-sm text-gray-600">
-                                                                    <span className="font-semibold">Action:</span> Draw {rule.actionShape} for{' '}
+                                                                    <span className="font-semibold">Hành Động:</span> Vẽ {rule.actionShape === 'circle' ? 'hình tròn' : 'đường thẳng'} cho{' '}
                                                                     <span className={rule.actionType === 'flood' ? 'text-blue-600' : 'text-red-600'}>
-                                                                        {rule.actionType === 'flood' ? '🌊 flood' : '⚡ outage'}
+                                                                        {rule.actionType === 'flood' ? '🌊 lũ lụt' : '⚡ tắc đường'}
                                                                     </span>
                                                                 </p>
                                                             </div>
@@ -794,6 +848,169 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                 )}
                             </>
                         )}
+                    </div>
+                    
+                    {/* Resize Handle */}
+                    <div
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            setIsResizing(true);
+                        }}
+                        className="flex-shrink-0 w-3 cursor-ew-resize hover:bg-blue-500 bg-gray-200 transition-colors flex items-center justify-center relative group"
+                        style={{ touchAction: 'none' }}
+                        title="Drag to resize"
+                    >
+                        <div className="w-1 h-16 bg-gray-400 group-hover:bg-blue-600 rounded-full transition-colors" />
+                    </div>
+                </div>
+            )}
+
+            {/* Split-screen Workflow Editor */}
+            {isOpen && activeTab === 'workflow' && (
+                <div 
+                    className="fixed left-0 top-0 bottom-0 z-30 bg-gray-900 shadow-2xl flex"
+                    style={{ width: `${workflowWidth}%` }}
+                >
+                    <div className="flex-1 overflow-hidden relative">
+                        <WorkflowEditor 
+                            sensors={sensors}
+                            map={map}
+                            onSensorCreated={reloadSensors}
+                            onSaveWorkflow={(nodes, edges) => {
+                            // Convert workflow to sensor rules
+                            const newRules: Omit<SensorRule, 'id'>[] = [];
+                            
+                            // Process trigger nodes (standalone automation)
+                            const triggerNodes = nodes.filter(n => n.type === 'trigger');
+                            triggerNodes.forEach(trigger => {
+                                const data = trigger.data;
+                                
+                                // For line triggers with 2 points
+                                if (data.actionShape === 'line' && data.points?.length === 2) {
+                                    newRules.push({
+                                        name: data.label,
+                                        type: '1-sensor',
+                                        sensors: [data.sensorId],
+                                        actionType: data.actionType as 'flood' | 'outage',
+                                        actionShape: 'line',
+                                        enabled: true,
+                                        // Store points for line drawing
+                                        metadata: {
+                                            condition: data.condition,
+                                            points: data.points
+                                        }
+                                    } as any);
+                                } else if (data.actionShape === 'circle') {
+                                    // Circle trigger
+                                    newRules.push({
+                                        name: data.label,
+                                        type: '1-sensor',
+                                        sensors: [data.sensorId],
+                                        actionType: data.actionType as 'flood' | 'outage',
+                                        actionShape: 'circle',
+                                        enabled: true,
+                                        metadata: {
+                                            condition: data.condition
+                                        }
+                                    } as any);
+                                }
+                            });
+                            
+                            // Find all action nodes
+                            const actionNodes = nodes.filter(n => n.type === 'action');
+                            
+                            actionNodes.forEach(actionNode => {
+                                // Find incoming edges to this action
+                                const incomingEdges = edges.filter(e => e.target === actionNode.id);
+                                
+                                if (incomingEdges.length === 0) return;
+                                
+                                // Get source nodes (could be sensors or logic nodes)
+                                const sourceIds = incomingEdges.map(e => e.source);
+                                const sourceNodes = nodes.filter(n => sourceIds.includes(n.id));
+                                
+                                // Check if sources are logic nodes
+                                const logicNode = sourceNodes.find(n => n.type === 'logic');
+                                
+                                if (logicNode) {
+                                    // 2-sensor rule with logic node
+                                    const logicIncoming = edges.filter(e => e.target === logicNode.id);
+                                    const sensorIds = logicIncoming
+                                        .map(e => nodes.find(n => n.id === e.source))
+                                        .filter(n => n?.type === 'sensor')
+                                        .map(n => n?.data.sensorId)
+                                        .filter(Boolean) as string[];
+                                    
+                                    if (sensorIds.length === 2) {
+                                        newRules.push({
+                                            name: `${actionNode.data.label} (2-sensor)`,
+                                            type: '2-sensor',
+                                            sensors: sensorIds,
+                                            operator: logicNode.data.operator as 'AND' | 'OR',
+                                            actionType: actionNode.data.actionType as 'flood' | 'outage',
+                                            actionShape: actionNode.data.actionShape as 'circle' | 'line',
+                                            enabled: true
+                                        });
+                                    }
+                                } else {
+                                    // 1-sensor rule(s)
+                                    const sensorNodes = sourceNodes.filter(n => n.type === 'sensor');
+                                    sensorNodes.forEach(sensorNode => {
+                                        newRules.push({
+                                            name: `${actionNode.data.label} (${sensorNode.data.label})`,
+                                            type: '1-sensor',
+                                            sensors: [sensorNode.data.sensorId as string],
+                                            actionType: actionNode.data.actionType as 'flood' | 'outage',
+                                            actionShape: actionNode.data.actionShape as 'circle' | 'line',
+                                            enabled: true
+                                        });
+                                    });
+                                }
+                            });
+                            
+                            // Save rules to API
+                            newRules.forEach(rule => {
+                                const fullRule = {
+                                    ...rule,
+                                    id: `rule-${Date.now()}-${Math.random()}`,
+                                    createdAt: Date.now()
+                                };
+                                
+                                fetch('/api/sensor-rules', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify(fullRule)
+                                }).then(res => res.json())
+                                  .then(data => {
+                                      setSensorRules(prev => [...prev, data.rule]);
+                                      if (onAddSensorRule) onAddSensorRule(rule);
+                                  });
+                            });
+                            
+                            alert(`✓ Đã tạo ${newRules.length} quy tắc tự động từ quy trình!`);
+                            setActiveTab('workflow');
+                        }}
+                        />
+                    </div>
+                    
+                    {/* Workflow Resize Handle */}
+                    <div
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            setIsResizing(true);
+                        }}
+                        className="flex-shrink-0 w-4 cursor-ew-resize hover:bg-purple-500 bg-purple-600 transition-colors flex flex-col items-center justify-center relative group"
+                        style={{ touchAction: 'none' }}
+                        title="Kéo để thay đổi kích thước"
+                    >
+                        <button
+                            onClick={() => setActiveTab('sensors')}
+                            className="absolute top-4 bg-white text-gray-800 px-3 py-2 rounded-lg shadow-lg hover:bg-gray-100 transition-colors text-xs font-medium whitespace-nowrap"
+                            style={{ transform: 'rotate(-90deg)', transformOrigin: 'center' }}
+                        >
+                            ← Quay Lại
+                        </button>
+                        <div className="w-1 h-20 bg-purple-400 group-hover:bg-white rounded-full transition-colors" />
                     </div>
                 </div>
             )}

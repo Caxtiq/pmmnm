@@ -1,4 +1,5 @@
-import db from './schema';
+import { getDatabase } from '../mongodb';
+import { COLLECTIONS } from './collections';
 
 export interface SensorData {
     id?: number;
@@ -12,37 +13,46 @@ export interface SensorData {
 }
 
 // Insert sensor data
-export function insertSensorData(data: SensorData): number {
-    const sensors = db.sensors.read();
-    const id = sensors.length > 0 ? Math.max(...sensors.map((s: any) => s.id || 0)) + 1 : 1;
+export async function insertSensorData(data: SensorData): Promise<number> {
+    const db = await getDatabase();
+    const collection = db.collection(COLLECTIONS.SENSOR_DATA);
+    
+    // Get next ID
+    const lastDoc = await collection.findOne({}, { sort: { id: -1 } });
+    const id = lastDoc?.id ? lastDoc.id + 1 : 1;
+    
     const newData = { ...data, id };
-    sensors.push(newData);
-    db.sensors.write(sensors);
+    await collection.insertOne(newData as any);
     return id;
 }
 
 // Get recent sensor data
-export function getRecentSensorData(limit: number = 100): SensorData[] {
-    const sensors = db.sensors.read();
-    return sensors
-        .sort((a: any, b: any) => b.timestamp - a.timestamp)
-        .slice(0, limit);
+export async function getRecentSensorData(limit: number = 100): Promise<SensorData[]> {
+    const db = await getDatabase();
+    const data = await db.collection(COLLECTIONS.SENSOR_DATA)
+        .find({})
+        .sort({ timestamp: -1 })
+        .limit(limit)
+        .toArray();
+    return data.map(d => ({ ...d, _id: undefined } as any));
 }
 
 // Get sensor data by sensor ID
-export function getSensorDataBySensorId(sensorId: string, limit: number = 100): SensorData[] {
-    const sensors = db.sensors.read();
-    return sensors
-        .filter((s: any) => s.sensorId === sensorId)
-        .sort((a: any, b: any) => b.timestamp - a.timestamp)
-        .slice(0, limit);
+export async function getSensorDataBySensorId(sensorId: string, limit: number = 100): Promise<SensorData[]> {
+    const db = await getDatabase();
+    const data = await db.collection(COLLECTIONS.SENSOR_DATA)
+        .find({ sensorId })
+        .sort({ timestamp: -1 })
+        .limit(limit)
+        .toArray();
+    return data.map(d => ({ ...d, _id: undefined } as any));
 }
 
 // Delete old sensor data
-export function deleteOldSensorData(olderThan: number): number {
-    const sensors = db.sensors.read();
-    const filtered = sensors.filter((s: any) => s.timestamp >= olderThan);
-    const deleted = sensors.length - filtered.length;
-    db.sensors.write(filtered);
-    return deleted;
+export async function deleteOldSensorData(olderThan: number): Promise<number> {
+    const db = await getDatabase();
+    const result = await db.collection(COLLECTIONS.SENSOR_DATA).deleteMany({
+        timestamp: { $lt: olderThan }
+    });
+    return result.deletedCount;
 }

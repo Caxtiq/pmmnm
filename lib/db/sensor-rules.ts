@@ -1,4 +1,5 @@
-import db from './schema';
+import { getDatabase } from '../mongodb';
+import { COLLECTIONS } from './collections';
 
 export interface Sensor {
     id: string;
@@ -23,86 +24,92 @@ export interface SensorRule {
     actionRadius?: number;
     enabled: boolean;
     createdAt?: number;
+    metadata?: {
+        condition?: 'active' | 'inactive';
+        points?: [number, number][];
+    };
 }
 
 // Get all sensors
-export function getAllSensors(): Sensor[] {
+export async function getAllSensors(): Promise<Sensor[]> {
     try {
-        const sensors = db.sensors.read();
-        return sensors.filter((s: any) => s.name !== undefined);
+        const db = await getDatabase();
+        const sensors = await db.collection(COLLECTIONS.SENSORS)
+            .find({ name: { $exists: true } })
+            .toArray();
+        return sensors.map(s => ({ ...s, _id: undefined } as any));
     } catch {
         return [];
     }
 }
 
 // Create sensor
-export function createSensor(sensor: Sensor): Sensor {
-    const sensors = db.sensors.read();
+export async function createSensor(sensor: Sensor): Promise<Sensor> {
+    const db = await getDatabase();
     const newSensor = { ...sensor, createdAt: Date.now() };
-    sensors.push(newSensor);
-    db.sensors.write(sensors);
+    await db.collection(COLLECTIONS.SENSORS).insertOne(newSensor as any);
     return newSensor;
 }
 
 // Update sensor
-export function updateSensor(id: string, updates: Partial<Sensor>): void {
-    const sensors = db.sensors.read();
-    const index = sensors.findIndex((s: any) => s.id === id && s.name !== undefined);
-    if (index !== -1) {
-        sensors[index] = { ...sensors[index], ...updates };
-        db.sensors.write(sensors);
-    }
+export async function updateSensor(id: string, updates: Partial<Sensor>): Promise<void> {
+    const db = await getDatabase();
+    await db.collection(COLLECTIONS.SENSORS).updateOne(
+        { id, name: { $exists: true } },
+        { $set: updates }
+    );
 }
 
 // Delete sensor
-export function deleteSensor(id: string): void {
-    const sensors = db.sensors.read();
-    const filtered = sensors.filter((s: any) => s.id !== id || s.name === undefined);
-    db.sensors.write(filtered);
+export async function deleteSensor(id: string): Promise<void> {
+    const db = await getDatabase();
+    await db.collection(COLLECTIONS.SENSORS).deleteOne({ id, name: { $exists: true } });
 }
 
 // Get all sensor rules
-export function getAllSensorRules(): SensorRule[] {
+export async function getAllSensorRules(): Promise<SensorRule[]> {
     try {
-        const data = db.predictions.read();
-        return data.filter((r: any) => r.type === '1-sensor' || r.type === '2-sensor');
+        const db = await getDatabase();
+        const rules = await db.collection(COLLECTIONS.SENSOR_RULES)
+            .find({})
+            .toArray();
+        return rules.map(r => ({ ...r, _id: undefined } as any));
     } catch {
         return [];
     }
 }
 
 // Create sensor rule
-export function createSensorRule(rule: SensorRule): SensorRule {
-    const rules = db.predictions.read();
+export async function createSensorRule(rule: SensorRule): Promise<SensorRule> {
+    const db = await getDatabase();
     const newRule = { ...rule, createdAt: Date.now() };
-    rules.push(newRule);
-    db.predictions.write(rules);
+    await db.collection(COLLECTIONS.SENSOR_RULES).insertOne(newRule as any);
     return newRule;
 }
 
 // Update sensor rule
-export function updateSensorRule(id: string, updates: Partial<SensorRule>): void {
-    const rules = db.predictions.read();
-    const index = rules.findIndex((r: any) => r.id === id);
-    if (index !== -1) {
-        rules[index] = { ...rules[index], ...updates };
-        db.predictions.write(rules);
-    }
+export async function updateSensorRule(id: string, updates: Partial<SensorRule>): Promise<void> {
+    const db = await getDatabase();
+    await db.collection(COLLECTIONS.SENSOR_RULES).updateOne(
+        { id },
+        { $set: updates }
+    );
 }
 
 // Delete sensor rule
-export function deleteSensorRule(id: string): void {
-    const rules = db.predictions.read();
-    const filtered = rules.filter((r: any) => r.id !== id);
-    db.predictions.write(filtered);
+export async function deleteSensorRule(id: string): Promise<void> {
+    const db = await getDatabase();
+    await db.collection(COLLECTIONS.SENSOR_RULES).deleteOne({ id });
 }
 
 // Toggle sensor rule
-export function toggleSensorRule(id: string): void {
-    const rules = db.predictions.read();
-    const index = rules.findIndex((r: any) => r.id === id);
-    if (index !== -1) {
-        rules[index].enabled = !rules[index].enabled;
-        db.predictions.write(rules);
+export async function toggleSensorRule(id: string): Promise<void> {
+    const db = await getDatabase();
+    const rule = await db.collection(COLLECTIONS.SENSOR_RULES).findOne({ id });
+    if (rule) {
+        await db.collection(COLLECTIONS.SENSOR_RULES).updateOne(
+            { id },
+            { $set: { enabled: !rule.enabled } }
+        );
     }
 }

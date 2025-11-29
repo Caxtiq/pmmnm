@@ -16,6 +16,16 @@ interface Zone {
     description?: string;
 }
 
+interface Sensor {
+    id: string;
+    name: string;
+    location: [number, number];
+    type: 'water_level' | 'temperature' | 'humidity';
+    threshold: number;
+    actionType: 'flood' | 'outage';
+    createdAt?: number;
+}
+
 interface MapsProps {
     isAdmin?: boolean;
 }
@@ -25,6 +35,7 @@ export default function Maps({ isAdmin = false }: MapsProps) {
     const [map, setMap] = useState<vietmapgl.Map | null>(null);
     const [isMounted, setIsMounted] = useState(false);
     const [zones, setZones] = useState<Zone[]>([]);
+    const [sensors, setSensors] = useState<Sensor[]>([]);
     const [isDrawing, setIsDrawing] = useState(false);
     const [drawingType, setDrawingType] = useState<'flood' | 'outage' | null>(null);
     const [drawingShape, setDrawingShape] = useState<'circle' | 'line'>('circle');
@@ -37,12 +48,13 @@ export default function Maps({ isAdmin = false }: MapsProps) {
     const [showTitleDialog, setShowTitleDialog] = useState(false);
     const [pendingZone, setPendingZone] = useState<Zone | null>(null);
     const [zoneForm, setZoneForm] = useState({ title: '', description: '' });
+    const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     useEffect(() => {
         setIsMounted(true);
     }, []);
 
-    // Load zones from database on mount
+    // Load zones and sensors from database on mount
     useEffect(() => {
         fetch('/api/zones')
             .then(res => res.json())
@@ -52,7 +64,18 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                 }
             })
             .catch(err => console.error('Failed to load zones:', err));
-    }, []);
+        
+        if (isAdmin) {
+            fetch('/api/sensors')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.sensors) {
+                        setSensors(data.sensors);
+                    }
+                })
+                .catch(err => console.error('Failed to load sensors:', err));
+        }
+    }, [isAdmin]);
 
     // Setup WebSocket connection for real-time updates
     useEffect(() => {
@@ -84,6 +107,10 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                     console.log('Sensor data received:', message.data);
                 } else if (message.type === 'prediction') {
                     console.log('Prediction received:', message.prediction);
+                } else if (message.type === 'sensor_created' && isAdmin) {
+                    setSensors(prev => [...prev, message.sensor]);
+                } else if (message.type === 'sensor_deleted' && isAdmin) {
+                    setSensors(prev => prev.filter(s => s.id !== message.sensorId));
                 }
             } catch (error) {
                 console.error('Failed to parse WebSocket message:', error);
@@ -109,6 +136,13 @@ export default function Maps({ isAdmin = false }: MapsProps) {
             updateZonesOnMap(zones);
         }
     }, [zones, map]);
+
+    // Update map when sensors change
+    useEffect(() => {
+        if (map && isAdmin) {
+            updateSensorsOnMap(sensors);
+        }
+    }, [sensors, map, isAdmin]);
 
     useEffect(() => {
         if (!isMounted || !mapContainerRef.current || map) return;
@@ -148,6 +182,17 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                     features: []
                 }
             });
+
+            // Add source for sensors
+            if (isAdmin) {
+                mapInstance.addSource('sensors', {
+                    type: 'geojson',
+                    data: {
+                        type: 'FeatureCollection',
+                        features: []
+                    }
+                });
+            }
 
             // Add layer for flood circle zones
             mapInstance.addLayer({
@@ -206,6 +251,40 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                 }
             });
 
+            // Add sensor layers for admins
+            if (isAdmin) {
+                mapInstance.addLayer({
+                    id: 'sensors-circle',
+                    type: 'circle',
+                    source: 'sensors',
+                    paint: {
+                        'circle-radius': 8,
+                        'circle-color': '#10b981',
+                        'circle-stroke-width': 2,
+                        'circle-stroke-color': '#ffffff',
+                        'circle-opacity': 0.8
+                    }
+                });
+
+                mapInstance.addLayer({
+                    id: 'sensors-label',
+                    type: 'symbol',
+                    source: 'sensors',
+                    layout: {
+                        'text-field': ['get', 'name'],
+                        'text-size': 11,
+                        'text-offset': [0, 1.5],
+                        'text-anchor': 'top',
+                        'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold']
+                    },
+                    paint: {
+                        'text-color': '#000000',
+                        'text-halo-color': '#ffffff',
+                        'text-halo-width': 2
+                    }
+                });
+            }
+
             setMap(mapInstance);
         });
 
@@ -224,6 +303,11 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                 const feature = e.features[0];
                 const zone = zones.find(z => z.id === feature.properties.id);
                 if (zone) {
+                    // Clear any pending hide timeout
+                    if (hoverTimeoutRef.current) {
+                        clearTimeout(hoverTimeoutRef.current);
+                        hoverTimeoutRef.current = null;
+                    }
                     setHoveredZone(zone);
                     setPopupPosition({ x: e.point.x, y: e.point.y });
                 }
@@ -236,6 +320,11 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                 const feature = e.features[0];
                 const zone = zones.find(z => z.id === feature.properties.id);
                 if (zone) {
+                    // Clear any pending hide timeout
+                    if (hoverTimeoutRef.current) {
+                        clearTimeout(hoverTimeoutRef.current);
+                        hoverTimeoutRef.current = null;
+                    }
                     setHoveredZone(zone);
                     setPopupPosition({ x: e.point.x, y: e.point.y });
                 }
@@ -248,6 +337,11 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                 const feature = e.features[0];
                 const zone = zones.find(z => z.id === feature.properties.id);
                 if (zone) {
+                    // Clear any pending hide timeout
+                    if (hoverTimeoutRef.current) {
+                        clearTimeout(hoverTimeoutRef.current);
+                        hoverTimeoutRef.current = null;
+                    }
                     setHoveredZone(zone);
                     setPopupPosition({ x: e.point.x, y: e.point.y });
                 }
@@ -256,8 +350,11 @@ export default function Maps({ isAdmin = false }: MapsProps) {
 
         const handleLeave = () => {
             map.getCanvas().style.cursor = '';
-            setHoveredZone(null);
-            setPopupPosition(null);
+            // Delay hiding to allow mouse to move to popup
+            hoverTimeoutRef.current = setTimeout(() => {
+                setHoveredZone(null);
+                setPopupPosition(null);
+            }, 200);
         };
 
         map.on('mousemove', 'flood-zones', handleFloodHover);
@@ -485,7 +582,7 @@ export default function Maps({ isAdmin = false }: MapsProps) {
 
     const finishDrawing = () => {
         if (!drawingCenter) {
-            alert('Please set a center point first');
+            alert('Vui lòng đặt điểm trung tâm trước');
             return;
         }
         
@@ -535,7 +632,7 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                         type: zone.type,
                         shape: zone.shape,
                         riskLevel: zone.riskLevel || 50,
-                        title: zone.title || 'Untitled',
+                        title: zone.title || 'Chưa đặt tên',
                         description: zone.description || ''
                     }
                 };
@@ -551,7 +648,7 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                         type: zone.type,
                         shape: zone.shape,
                         riskLevel: zone.riskLevel || 50,
-                        title: zone.title || 'Untitled',
+                        title: zone.title || 'Chưa đặt tên',
                         description: zone.description || ''
                     }
                 };
@@ -560,6 +657,33 @@ export default function Maps({ isAdmin = false }: MapsProps) {
         }).filter(f => f !== null);
 
         const source = map.getSource('zones') as any;
+        if (source) {
+            source.setData({
+                type: 'FeatureCollection',
+                features
+            });
+        }
+    };
+
+    const updateSensorsOnMap = (sensorsData: Sensor[]) => {
+        if (!map || !isAdmin) return;
+
+        const features = sensorsData.map(sensor => ({
+            type: 'Feature' as const,
+            geometry: {
+                type: 'Point' as const,
+                coordinates: sensor.location
+            },
+            properties: {
+                id: sensor.id,
+                name: sensor.name,
+                type: sensor.type,
+                threshold: sensor.threshold,
+                actionType: sensor.actionType
+            }
+        }));
+
+        const source = map.getSource('sensors') as any;
         if (source) {
             source.setData({
                 type: 'FeatureCollection',
@@ -578,7 +702,7 @@ export default function Maps({ isAdmin = false }: MapsProps) {
         
         const zoneToSave = {
             ...pendingZone,
-            title: zoneForm.title || 'Untitled Zone',
+            title: zoneForm.title || 'Khu Vực Chưa Đặt Tên',
             description: zoneForm.description
         };
 
@@ -608,7 +732,7 @@ export default function Maps({ isAdmin = false }: MapsProps) {
     };
 
     const handleDeleteZone = (zoneId: string) => {
-        if (!confirm('Delete this zone?')) return;
+        if (!confirm('Xóa khu vực này?')) return;
         
         fetch(`/api/zones/${zoneId}`, { method: 'DELETE' })
             .then(() => {
@@ -637,7 +761,7 @@ export default function Maps({ isAdmin = false }: MapsProps) {
     };
 
     const handleClearZones = () => {
-        if (confirm('Are you sure you want to clear all zones?')) {
+        if (confirm('Bạn có chắc chắn muốn xóa tất cả các khu vực?')) {
             fetch('/api/zones', { method: 'DELETE' })
                 .then(() => {
                     setZones([]);
@@ -671,10 +795,21 @@ export default function Maps({ isAdmin = false }: MapsProps) {
             {/* Hover Popup */}
             {hoveredZone && popupPosition && (
                 <div 
-                    className="fixed z-50 bg-white rounded-lg shadow-xl p-4 min-w-64 max-w-sm pointer-events-none"
+                    className="fixed z-50 bg-white rounded-lg shadow-xl p-4 min-w-64 max-w-sm pointer-events-auto"
                     style={{ 
                         left: `${popupPosition.x + 10}px`, 
                         top: `${popupPosition.y + 10}px` 
+                    }}
+                    onMouseEnter={() => {
+                        // Clear timeout when mouse enters popup
+                        if (hoverTimeoutRef.current) {
+                            clearTimeout(hoverTimeoutRef.current);
+                            hoverTimeoutRef.current = null;
+                        }
+                    }}
+                    onMouseLeave={() => {
+                        setHoveredZone(null);
+                        setPopupPosition(null);
                     }}
                 >
                     <div className="flex items-start justify-between gap-3">
@@ -686,7 +821,7 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                                         ? 'bg-blue-100 text-blue-700' 
                                         : 'bg-red-100 text-red-700'
                                 }`}>
-                                    {hoveredZone.type === 'flood' ? '🌊 Flood Risk' : '⚡ Outage Risk'}
+                                    {hoveredZone.type === 'flood' ? '🌊 Flood Risk' : '⚡ Nguy Cơ Tắc Đường'}
                                 </span>
                                 <span className="ml-2 text-xs text-gray-500">
                                     {hoveredZone.shape === 'circle' ? '● Zone' : '━ Route'}
@@ -700,9 +835,9 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                     {isAdmin && (
                         <button
                             onClick={() => handleDeleteZone(hoveredZone.id)}
-                            className="mt-3 w-full p-2 bg-red-500 text-white rounded hover:bg-red-600 transition-colors pointer-events-auto"
+                            className="mt-3 w-full p-2 bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
                         >
-                            Delete Zone
+                            Xóa Khu Vực
                         </button>
                     )}
                 </div>
