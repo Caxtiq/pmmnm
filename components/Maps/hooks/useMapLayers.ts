@@ -9,18 +9,18 @@ interface MapLayer {
   isAdmin: boolean;
 }
 
-export const useMapLayers = ({ map, zones, sensors, isAdmin }) => {
+export const useMapLayers = ({ map, zones, sensors, isAdmin }: MapLayer) => {
   // Update map when zones change
   useEffect(() => {
     if (map && zones.length > 0) {
-      updateZonesOnMap(zones);
+      updateZonesOnMap(zones, map);
     }
   }, [zones, map]);
 
   // Update map when sensors change
   useEffect(() => {
     if (map && isAdmin) {
-      updateSensorsOnMap(sensors);
+      updateSensorsOnMap(sensors, map);
     }
   }, [sensors, map, isAdmin]);
 };

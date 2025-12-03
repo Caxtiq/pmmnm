@@ -1,7 +1,7 @@
 import { Sensor, Zone } from "../types";
 import { createCircleCoordinates } from "./utils";
 
-export const updateZonesOnMap = (zonesData: Zone[]) => {
+export const updateZonesOnMap = (zonesData: Zone[], map: vietmapgl.Map) => {
   const features = zonesData
     .map((zone) => {
       if (zone.shape === "circle" && zone.center && zone.radius) {
@@ -51,7 +51,10 @@ export const updateZonesOnMap = (zonesData: Zone[]) => {
   }
 };
 
-export const updateSensorsOnMap = (sensorsData: Sensor[]) => {
+export const updateSensorsOnMap = (
+  sensorsData: Sensor[],
+  map: vietmapgl.Map,
+) => {
   const features = sensorsData.map((sensor) => ({
     type: "Feature" as const,
     geometry: {
