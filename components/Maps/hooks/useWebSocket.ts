@@ -4,15 +4,15 @@ interface UseWebSocketProps {
   isAdmin: boolean;
   setZones: any;
   setSensors: any;
+  wsRef?: React.MutableRefObject<WebSocket | null>;
 }
 
 export const useWebSocket = ({
   isAdmin,
   setZones,
   setSensors,
+  wsRef,
 }: UseWebSocketProps) => {
-  const wsRef = useRef<WebSocket | null>(null);
-
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -37,7 +37,9 @@ export const useWebSocket = ({
             prev.map((z: any) => (z.id === message.zone.id ? message.zone : z)),
           );
         } else if (message.type === "zone_deleted") {
-          setZones((prev: any) => prev.filter((z: any) => z.id !== message.zoneId));
+          setZones((prev: any) =>
+            prev.filter((z: any) => z.id !== message.zoneId),
+          );
         } else if (message.type === "zones_cleared") {
           setZones([]);
         } else if (message.type === "sensor_data") {
@@ -47,7 +49,9 @@ export const useWebSocket = ({
         } else if (message.type === "sensor_created" && isAdmin) {
           setSensors((prev: any) => [...prev, message.sensor]);
         } else if (message.type === "sensor_deleted" && isAdmin) {
-          setSensors((prev: any) => prev.filter((s: any) => s.id !== message.sensorId));
+          setSensors((prev: any) =>
+            prev.filter((s: any) => s.id !== message.sensorId),
+          );
         }
       } catch (error) {
         console.error("Failed to parse WebSocket message:", error);
@@ -66,6 +70,4 @@ export const useWebSocket = ({
       ws.close();
     };
   }, [isAdmin, setSensors, setZones]);
-
-  return wsRef;
 };

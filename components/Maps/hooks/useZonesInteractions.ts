@@ -7,30 +7,25 @@ interface UseZoneInteractionsProps {
   zones: Zone[];
   setHoveredZone: (zone: Zone | null) => void;
   setPopupPosition: (pos: { x: number; y: number } | null) => void;
+  hoverTimeoutRef: React.MutableRefObject<NodeJS.Timeout | null>;
 }
-
 export const useZoneInteractions = ({
   map,
   zones,
   setHoveredZone,
   setPopupPosition,
+  hoverTimeoutRef,
 }: UseZoneInteractionsProps) => {
-  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
   useEffect(() => {
     if (!map) return;
 
-    // 1. Hàm xử lý chung cho việc Hover (Gộp logic lặp lại)
-    const handleHover = (e: any) => {
+    const handleFloodHover = (e: any) => {
       map.getCanvas().style.cursor = "pointer";
-
       if (e.features && e.features.length > 0) {
         const feature = e.features[0];
-        // Tìm zone tương ứng với feature đang hover
-        const zone = zones.find((z) => z.id === feature.properties?.id);
-
+        const zone = zones.find((z) => z.id === feature.properties.id);
         if (zone) {
-          // Xóa timeout ẩn popup nếu đang có (để chuột di chuyển mượt mà không bị nháy)
+          // Clear any pending hide timeout
           if (hoverTimeoutRef.current) {
             clearTimeout(hoverTimeoutRef.current);
             hoverTimeoutRef.current = null;
@@ -41,41 +36,63 @@ export const useZoneInteractions = ({
       }
     };
 
-    // 2. Hàm xử lý khi chuột rời đi
+    const handleOutageHover = (e: any) => {
+      map.getCanvas().style.cursor = "pointer";
+      if (e.features && e.features.length > 0) {
+        const feature = e.features[0];
+        const zone = zones.find((z) => z.id === feature.properties.id);
+        if (zone) {
+          // Clear any pending hide timeout
+          if (hoverTimeoutRef.current) {
+            clearTimeout(hoverTimeoutRef.current);
+            hoverTimeoutRef.current = null;
+          }
+          setHoveredZone(zone);
+          setPopupPosition({ x: e.point.x, y: e.point.y });
+        }
+      }
+    };
+
+    const handleLineHover = (e: any) => {
+      map.getCanvas().style.cursor = "pointer";
+      if (e.features && e.features.length > 0) {
+        const feature = e.features[0];
+        const zone = zones.find((z) => z.id === feature.properties.id);
+        if (zone) {
+          // Clear any pending hide timeout
+          if (hoverTimeoutRef.current) {
+            clearTimeout(hoverTimeoutRef.current);
+            hoverTimeoutRef.current = null;
+          }
+          setHoveredZone(zone);
+          setPopupPosition({ x: e.point.x, y: e.point.y });
+        }
+      }
+    };
+
     const handleLeave = () => {
       map.getCanvas().style.cursor = "";
-      // Delay một chút trước khi ẩn để người dùng kịp di chuột vào popup (nếu cần)
+      // Delay hiding to allow mouse to move to popup
       hoverTimeoutRef.current = setTimeout(() => {
         setHoveredZone(null);
         setPopupPosition(null);
       }, 200);
     };
 
-    // 3. Danh sách các layer cần bắt sự kiện
-    const interactionLayers = ["flood-zones", "outage-zones", "zones-lines"];
+    map.on("mousemove", "flood-zones", handleFloodHover);
+    map.on("mousemove", "outage-zones", handleOutageHover);
+    map.on("mousemove", "zones-lines", handleLineHover);
+    map.on("mouseleave", "flood-zones", handleLeave);
+    map.on("mouseleave", "outage-zones", handleLeave);
+    map.on("mouseleave", "zones-lines", handleLeave);
 
-    // 4. Gán sự kiện (Loop qua mảng cho gọn)
-    interactionLayers.forEach((layer) => {
-      // Kiểm tra xem layer có tồn tại không trước khi gán (để tránh lỗi warning)
-      if (map.getLayer(layer)) {
-        map.on("mousemove", layer, handleHover);
-        map.on("mouseleave", layer, handleLeave);
-      }
-    });
-
-    // 5. Cleanup khi unmount hoặc dependencies thay đổi
     return () => {
-      interactionLayers.forEach((layer) => {
-        if (map.getLayer(layer)) {
-          map.off("mousemove", layer, handleHover);
-          map.off("mouseleave", layer, handleLeave);
-        }
-      });
-
-      // Clear timeout nếu component unmount
-      if (hoverTimeoutRef.current) {
-        clearTimeout(hoverTimeoutRef.current);
-      }
+      map.off("mousemove", "flood-zones", handleFloodHover);
+      map.off("mousemove", "outage-zones", handleOutageHover);
+      map.off("mousemove", "zones-lines", handleLineHover);
+      map.off("mouseleave", "flood-zones", handleLeave);
+      map.off("mouseleave", "outage-zones", handleLeave);
+      map.off("mouseleave", "zones-lines", handleLeave);
     };
-  }, [map, zones, setHoveredZone, setPopupPosition]);
+  }, [map, zones]);
 };
