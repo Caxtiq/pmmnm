@@ -15,43 +15,34 @@
  */
 
 "use client";
-import vietmapgl from "@vietmap/vietmap-gl-js/dist/vietmap-gl.js";
 import "@vietmap/vietmap-gl-js/dist/vietmap-gl.css";
 import { useState, useEffect, useRef } from "react";
 import AdminPanel from "./AdminPanel";
 
-interface Zone {
-  id: string;
-  type: "flood" | "outage";
-  shape: "circle" | "line";
-  center?: number[]; // [lng, lat] for circles (zones)
-  radius?: number; // in meters for circles (zones)
-  coordinates?: number[][]; // for lines (routes/paths)
-  riskLevel?: number;
-  title?: string;
-  description?: string;
-}
+import { Sensor, Zone } from "./types";
 
-interface Sensor {
-  id: string;
-  name: string;
-  location: [number, number];
-  type: "water_level" | "temperature" | "humidity";
-  threshold: number;
-  actionType: "flood" | "outage";
-  createdAt?: number;
-}
+import { calculateDistance, createCircleCoordinates } from "./utils/utils";
+
+import {
+  useLoadSensors,
+  useLoadZones,
+  useMapData,
+  useMapLayers,
+  useWebSocket,
+  useZoneInteractions,
+} from "./hooks";
 
 interface MapsProps {
   isAdmin?: boolean;
 }
 
 export default function Maps({ isAdmin = false }: MapsProps) {
-  const mapContainerRef = useRef<HTMLDivElement | null>(null);
-  const [map, setMap] = useState<vietmapgl.Map | null>(null);
+  // Mounted state to prevent SSR issues
   const [isMounted, setIsMounted] = useState(false);
-  const [zones, setZones] = useState<Zone[]>([]);
-  const [sensors, setSensors] = useState<Sensor[]>([]);
+
+  //
+  const wsRef = useRef<WebSocket | null>(null);
+  // Drawing state
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawingType, setDrawingType] = useState<"flood" | "outage" | null>(
     null,
@@ -60,8 +51,11 @@ export default function Maps({ isAdmin = false }: MapsProps) {
   const [drawingCenter, setDrawingCenter] = useState<number[] | null>(null);
   const [drawingRadius, setDrawingRadius] = useState<number>(0);
   const [drawingPoints, setDrawingPoints] = useState<number[][]>([]);
-  const wsRef = useRef<WebSocket | null>(null);
+
+  // Hover state
   const [hoveredZone, setHoveredZone] = useState<Zone | null>(null);
+
+  // Popup position state
   const [popupPosition, setPopupPosition] = useState<{
     x: number;
     y: number;
@@ -69,6 +63,8 @@ export default function Maps({ isAdmin = false }: MapsProps) {
   const [showTitleDialog, setShowTitleDialog] = useState(false);
   const [pendingZone, setPendingZone] = useState<Zone | null>(null);
   const [zoneForm, setZoneForm] = useState({ title: "", description: "" });
+
+  // for hover timeout handling
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -76,344 +72,27 @@ export default function Maps({ isAdmin = false }: MapsProps) {
   }, []);
 
   // Load zones and sensors from database on mount
-  useEffect(() => {
-    fetch("/api/zones")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.zones) {
-          setZones(data.zones);
-        }
-      })
-      .catch((err) => console.error("Failed to load zones:", err));
-
-    if (isAdmin) {
-      fetch("/api/sensors")
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.sensors) {
-            setSensors(data.sensors);
-          }
-        })
-        .catch((err) => console.error("Failed to load sensors:", err));
-    }
-  }, [isAdmin]);
+  const { zones, setZones } = useLoadZones();
+  const { sensors, setSensors } = useLoadSensors({ isAdmin });
 
   // Setup WebSocket connection for real-time updates
-  useEffect(() => {
-    if (typeof window === "undefined") return;
+  useWebSocket({ isAdmin, setZones, setSensors, wsRef });
 
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
-
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      console.log("WebSocket connected");
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data);
-
-        if (message.type === "zone_created") {
-          setZones((prev) => [...prev, message.zone]);
-        } else if (message.type === "zone_updated") {
-          setZones((prev) =>
-            prev.map((z) => (z.id === message.zone.id ? message.zone : z)),
-          );
-        } else if (message.type === "zone_deleted") {
-          setZones((prev) => prev.filter((z) => z.id !== message.zoneId));
-        } else if (message.type === "zones_cleared") {
-          setZones([]);
-        } else if (message.type === "sensor_data") {
-          console.log("Sensor data received:", message.data);
-        } else if (message.type === "prediction") {
-          console.log("Prediction received:", message.prediction);
-        } else if (message.type === "sensor_created" && isAdmin) {
-          setSensors((prev) => [...prev, message.sensor]);
-        } else if (message.type === "sensor_deleted" && isAdmin) {
-          setSensors((prev) => prev.filter((s) => s.id !== message.sensorId));
-        }
-      } catch (error) {
-        console.error("Failed to parse WebSocket message:", error);
-      }
-    };
-
-    ws.onerror = (error) => {
-      console.error("WebSocket error:", error);
-    };
-
-    ws.onclose = () => {
-      console.log("WebSocket disconnected");
-    };
-
-    return () => {
-      ws.close();
-    };
-  }, []);
+  // Initialize map
+  const { mapContainerRef, map } = useMapData({ isAdmin, isMounted });
 
   // Update map when zones change
-  useEffect(() => {
-    if (map && zones.length > 0) {
-      updateZonesOnMap(zones);
-    }
-  }, [zones, map]);
-
   // Update map when sensors change
-  useEffect(() => {
-    if (map && isAdmin) {
-      updateSensorsOnMap(sensors);
-    }
-  }, [sensors, map, isAdmin]);
-
-  useEffect(() => {
-    if (!isMounted || !mapContainerRef.current || map) return;
-
-    const apiKey = process.env.NEXT_PUBLIC_VIETMAP_API_KEY || "";
-
-    const mapInstance = new vietmapgl.Map({
-      container: mapContainerRef.current,
-      style: `https://maps.vietmap.vn/maps/styles/tm/style.json?apikey=${apiKey}`,
-      center: [105.748684, 20.962594], // Hanoi coordinates
-
-      zoom: 12,
-      transformRequest: (url: string) => {
-        if (url.includes("vietmap.vn")) {
-          return {
-            url: url.includes("?")
-              ? `${url}&apikey=${apiKey}`
-              : `${url}?apikey=${apiKey}`,
-          };
-        }
-        return { url };
-      },
-    });
-
-    mapInstance.addControl(new vietmapgl.NavigationControl(), "top-right");
-    mapInstance.addControl(
-      new vietmapgl.GeolocateControl({
-        positionOptions: {
-          enableHighAccuracy: true,
-        },
-        trackUserLocation: true,
-      }),
-    );
-
-    mapInstance.on("load", () => {
-      // Add sources for zones
-      mapInstance.addSource("zones", {
-        type: "geojson",
-        data: {
-          type: "FeatureCollection",
-          features: [],
-        },
-      });
-
-      // Add source for sensors
-      if (isAdmin) {
-        mapInstance.addSource("sensors", {
-          type: "geojson",
-          data: {
-            type: "FeatureCollection",
-            features: [],
-          },
-        });
-      }
-
-      // Add layer for flood circle zones
-      mapInstance.addLayer({
-        id: "flood-zones",
-        type: "fill",
-        source: "zones",
-        filter: [
-          "all",
-          ["==", ["get", "type"], "flood"],
-          ["==", ["get", "shape"], "circle"],
-        ],
-        paint: {
-          "fill-color": "#3b82f6",
-          "fill-opacity": 0.4,
-        },
-      });
-
-      // Add layer for outage circle zones
-      mapInstance.addLayer({
-        id: "outage-zones",
-        type: "fill",
-        source: "zones",
-        filter: [
-          "all",
-          ["==", ["get", "type"], "outage"],
-          ["==", ["get", "shape"], "circle"],
-        ],
-        paint: {
-          "fill-color": "#ef4444",
-          "fill-opacity": 0.4,
-        },
-      });
-
-      // Add line layers for routes/paths
-      mapInstance.addLayer({
-        id: "zones-lines",
-        type: "line",
-        source: "zones",
-        filter: ["==", ["get", "shape"], "line"],
-        paint: {
-          "line-color": [
-            "case",
-            ["==", ["get", "type"], "flood"],
-            "#2563eb",
-            ["==", ["get", "type"], "outage"],
-            "#dc2626",
-            "#000000",
-          ],
-          "line-width": 6,
-          "line-opacity": 0.8,
-        },
-      });
-
-      // Add outline layers
-      mapInstance.addLayer({
-        id: "zones-outline",
-        type: "line",
-        source: "zones",
-        filter: ["==", ["get", "shape"], "circle"],
-        paint: {
-          "line-color": [
-            "case",
-            ["==", ["get", "type"], "flood"],
-            "#2563eb",
-            ["==", ["get", "type"], "outage"],
-            "#dc2626",
-            "#000000",
-          ],
-          "line-width": 2,
-        },
-      });
-
-      // Add sensor layers for admins
-      if (isAdmin) {
-        mapInstance.addLayer({
-          id: "sensors-circle",
-          type: "circle",
-          source: "sensors",
-          paint: {
-            "circle-radius": 8,
-            "circle-color": "#10b981",
-            "circle-stroke-width": 2,
-            "circle-stroke-color": "#ffffff",
-            "circle-opacity": 0.8,
-          },
-        });
-
-        mapInstance.addLayer({
-          id: "sensors-label",
-          type: "symbol",
-          source: "sensors",
-          layout: {
-            "text-field": ["get", "name"],
-            "text-size": 11,
-            "text-offset": [0, 1.5],
-            "text-anchor": "top",
-            "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
-          },
-          paint: {
-            "text-color": "#000000",
-            "text-halo-color": "#ffffff",
-            "text-halo-width": 2,
-          },
-        });
-      }
-
-      setMap(mapInstance);
-    });
-
-    return () => {
-      mapInstance.remove();
-    };
-  }, [isMounted]);
+  useMapLayers({ map, zones, sensors, isAdmin });
 
   // Add hover interactions
-  useEffect(() => {
-    if (!map) return;
-
-    const handleFloodHover = (e: any) => {
-      map.getCanvas().style.cursor = "pointer";
-      if (e.features && e.features.length > 0) {
-        const feature = e.features[0];
-        const zone = zones.find((z) => z.id === feature.properties.id);
-        if (zone) {
-          // Clear any pending hide timeout
-          if (hoverTimeoutRef.current) {
-            clearTimeout(hoverTimeoutRef.current);
-            hoverTimeoutRef.current = null;
-          }
-          setHoveredZone(zone);
-          setPopupPosition({ x: e.point.x, y: e.point.y });
-        }
-      }
-    };
-
-    const handleOutageHover = (e: any) => {
-      map.getCanvas().style.cursor = "pointer";
-      if (e.features && e.features.length > 0) {
-        const feature = e.features[0];
-        const zone = zones.find((z) => z.id === feature.properties.id);
-        if (zone) {
-          // Clear any pending hide timeout
-          if (hoverTimeoutRef.current) {
-            clearTimeout(hoverTimeoutRef.current);
-            hoverTimeoutRef.current = null;
-          }
-          setHoveredZone(zone);
-          setPopupPosition({ x: e.point.x, y: e.point.y });
-        }
-      }
-    };
-
-    const handleLineHover = (e: any) => {
-      map.getCanvas().style.cursor = "pointer";
-      if (e.features && e.features.length > 0) {
-        const feature = e.features[0];
-        const zone = zones.find((z) => z.id === feature.properties.id);
-        if (zone) {
-          // Clear any pending hide timeout
-          if (hoverTimeoutRef.current) {
-            clearTimeout(hoverTimeoutRef.current);
-            hoverTimeoutRef.current = null;
-          }
-          setHoveredZone(zone);
-          setPopupPosition({ x: e.point.x, y: e.point.y });
-        }
-      }
-    };
-
-    const handleLeave = () => {
-      map.getCanvas().style.cursor = "";
-      // Delay hiding to allow mouse to move to popup
-      hoverTimeoutRef.current = setTimeout(() => {
-        setHoveredZone(null);
-        setPopupPosition(null);
-      }, 200);
-    };
-
-    map.on("mousemove", "flood-zones", handleFloodHover);
-    map.on("mousemove", "outage-zones", handleOutageHover);
-    map.on("mousemove", "zones-lines", handleLineHover);
-    map.on("mouseleave", "flood-zones", handleLeave);
-    map.on("mouseleave", "outage-zones", handleLeave);
-    map.on("mouseleave", "zones-lines", handleLeave);
-
-    return () => {
-      map.off("mousemove", "flood-zones", handleFloodHover);
-      map.off("mousemove", "outage-zones", handleOutageHover);
-      map.off("mousemove", "zones-lines", handleLineHover);
-      map.off("mouseleave", "flood-zones", handleLeave);
-      map.off("mouseleave", "outage-zones", handleLeave);
-      map.off("mouseleave", "zones-lines", handleLeave);
-    };
-  }, [map, zones]);
+  useZoneInteractions({
+    map,
+    zones,
+    setHoveredZone,
+    setPopupPosition,
+    hoverTimeoutRef,
+  });
 
   // Handle zone drawing
   useEffect(() => {
@@ -513,40 +192,6 @@ export default function Maps({ isAdmin = false }: MapsProps) {
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [map, isDrawing, zones, drawingType, drawingShape]);
-
-  const calculateDistance = (coord1: number[], coord2: number[]): number => {
-    const R = 6371e3; // Earth radius in meters
-    const φ1 = (coord1[1] * Math.PI) / 180;
-    const φ2 = (coord2[1] * Math.PI) / 180;
-    const Δφ = ((coord2[1] - coord1[1]) * Math.PI) / 180;
-    const Δλ = ((coord2[0] - coord1[0]) * Math.PI) / 180;
-
-    const a =
-      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-    return R * c;
-  };
-
-  const createCircleCoordinates = (
-    center: number[],
-    radius: number,
-  ): number[][] => {
-    const points = 64;
-    const coords: number[][] = [];
-    const distanceX = radius / (111320 * Math.cos((center[1] * Math.PI) / 180));
-    const distanceY = radius / 110540;
-
-    for (let i = 0; i < points; i++) {
-      const angle = (i / points) * 2 * Math.PI;
-      const dx = distanceX * Math.cos(angle);
-      const dy = distanceY * Math.sin(angle);
-      coords.push([center[0] + dx, center[1] + dy]);
-    }
-    coords.push(coords[0]); // Close the circle
-    return coords;
-  };
 
   const updateDrawingLayer = (center: number[], radius: number) => {
     if (!map || !center) return;
@@ -1002,4 +647,3 @@ export default function Maps({ isAdmin = false }: MapsProps) {
     </>
   );
 }
-
