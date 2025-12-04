@@ -14,12 +14,24 @@
  * limitations under the License.
  */
 
-import Maps from "@/components/Maps/Maps";
+export interface Zone {
+  id: string;
+  type: "flood" | "outage";
+  shape: "circle" | "line";
+  center?: number[]; // [lng, lat] for circles (zones)
+  radius?: number; // in meters for circles (zones)
+  coordinates?: number[][]; // for lines (routes/paths)
+  riskLevel?: number;
+  title?: string;
+  description?: string;
+}
 
-export default function Home() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <Maps />
-    </div>
-  );
+export interface Sensor {
+  id: string;
+  name: string;
+  location: [number, number];
+  type: "water_level" | "temperature" | "humidity";
+  threshold: number;
+  actionType: "flood" | "outage";
+  createdAt?: number;
 }
