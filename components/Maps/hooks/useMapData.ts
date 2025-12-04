@@ -13,23 +13,16 @@ export const useMapData = ({
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const [map, setMap] = useState<vietmapgl.Map | null>(null);
 
-  // Dùng ref để giữ instance map thật sự, tránh bị lừa bởi state ảo trong Strict Mode
-  const mapInstanceRef = useRef<vietmapgl.Map | null>(null);
-
   useEffect(() => {
-    // 1. Chỉ chạy khi đã mount và có thẻ div
-    if (!isMounted || !mapContainerRef.current) return;
-
-    // 2. CHỐT CHẶN QUAN TRỌNG: Nếu ref đã giữ map rồi thì không tạo mới
-    if (mapInstanceRef.current) return;
+    if (!isMounted || !mapContainerRef.current || map) return;
 
     const apiKey = process.env.NEXT_PUBLIC_VIETMAP_API_KEY || "";
 
-    // 3. Khởi tạo Map
     const mapInstance = new vietmapgl.Map({
       container: mapContainerRef.current,
       style: `https://maps.vietmap.vn/maps/styles/tm/style.json?apikey=${apiKey}`,
-      center: [105.748684, 20.962594],
+      center: [105.748684, 20.962594], // Hanoi coordinates
+
       zoom: 12,
       transformRequest: (url: string) => {
         if (url.includes("vietmap.vn")) {
@@ -43,32 +36,38 @@ export const useMapData = ({
       },
     });
 
-    // 4. Lưu instance vào Ref ngay lập tức
-    mapInstanceRef.current = mapInstance;
-
     mapInstance.addControl(new vietmapgl.NavigationControl(), "top-right");
     mapInstance.addControl(
       new vietmapgl.GeolocateControl({
-        positionOptions: { enableHighAccuracy: true },
+        positionOptions: {
+          enableHighAccuracy: true,
+        },
         trackUserLocation: true,
       }),
     );
 
     mapInstance.on("load", () => {
-      // Init các Sources & Layers rỗng (giữ nguyên logic cũ của bạn)
+      // Add sources for zones
       mapInstance.addSource("zones", {
         type: "geojson",
-        data: { type: "FeatureCollection", features: [] },
+        data: {
+          type: "FeatureCollection",
+          features: [],
+        },
       });
 
+      // Add source for sensors
       if (isAdmin) {
         mapInstance.addSource("sensors", {
           type: "geojson",
-          data: { type: "FeatureCollection", features: [] },
+          data: {
+            type: "FeatureCollection",
+            features: [],
+          },
         });
       }
 
-      // Add Layers (Flood, Outage, Lines...) - Code cũ của bạn
+      // Add layer for flood circle zones
       mapInstance.addLayer({
         id: "flood-zones",
         type: "fill",
@@ -78,32 +77,108 @@ export const useMapData = ({
           ["==", ["get", "type"], "flood"],
           ["==", ["get", "shape"], "circle"],
         ],
-        paint: { "fill-color": "#3b82f6", "fill-opacity": 0.4 },
+        paint: {
+          "fill-color": "#3b82f6",
+          "fill-opacity": 0.4,
+        },
       });
 
-      // ... (Giữ nguyên các layer khác) ...
+      // Add layer for outage circle zones
+      mapInstance.addLayer({
+        id: "outage-zones",
+        type: "fill",
+        source: "zones",
+        filter: [
+          "all",
+          ["==", ["get", "type"], "outage"],
+          ["==", ["get", "shape"], "circle"],
+        ],
+        paint: {
+          "fill-color": "#ef4444",
+          "fill-opacity": 0.4,
+        },
+      });
+
+      // Add line layers for routes/paths
+      mapInstance.addLayer({
+        id: "zones-lines",
+        type: "line",
+        source: "zones",
+        filter: ["==", ["get", "shape"], "line"],
+        paint: {
+          "line-color": [
+            "case",
+            ["==", ["get", "type"], "flood"],
+            "#2563eb",
+            ["==", ["get", "type"], "outage"],
+            "#dc2626",
+            "#000000",
+          ],
+          "line-width": 6,
+          "line-opacity": 0.8,
+        },
+      });
+
+      // Add outline layers
       mapInstance.addLayer({
         id: "zones-outline",
         type: "line",
         source: "zones",
         filter: ["==", ["get", "shape"], "circle"],
         paint: {
-          "line-color": "#000000",
+          "line-color": [
+            "case",
+            ["==", ["get", "type"], "flood"],
+            "#2563eb",
+            ["==", ["get", "type"], "outage"],
+            "#dc2626",
+            "#000000",
+          ],
           "line-width": 2,
         },
       });
 
-      // Cuối cùng mới set vào State để kích hoạt các hook khác
+      // Add sensor layers for admins
+      if (isAdmin) {
+        mapInstance.addLayer({
+          id: "sensors-circle",
+          type: "circle",
+          source: "sensors",
+          paint: {
+            "circle-radius": 8,
+            "circle-color": "#10b981",
+            "circle-stroke-width": 2,
+            "circle-stroke-color": "#ffffff",
+            "circle-opacity": 0.8,
+          },
+        });
+
+        mapInstance.addLayer({
+          id: "sensors-label",
+          type: "symbol",
+          source: "sensors",
+          layout: {
+            "text-field": ["get", "name"],
+            "text-size": 11,
+            "text-offset": [0, 1.5],
+            "text-anchor": "top",
+            "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+          },
+          paint: {
+            "text-color": "#000000",
+            "text-halo-color": "#ffffff",
+            "text-halo-width": 2,
+          },
+        });
+      }
+
       setMap(mapInstance);
     });
 
-    // 5. Cleanup function
     return () => {
       mapInstance.remove();
-      mapInstanceRef.current = null; // Reset ref về null để lần sau tạo lại được
-      // setMap(null); // Không cần setMap(null) ở đây để tránh re-render thừa
     };
-  }, [isMounted, isAdmin]); // Dependencies
+  }, [isMounted]);
 
   return { map, mapContainerRef };
 };
