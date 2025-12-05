@@ -1,28 +1,55 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { insertPrediction, getActivePredictions, deleteExpiredPredictions, Prediction } from '@/lib/db/predictions';
+/*
+ * Copyright 2025 PKA-OpenLD
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import { NextRequest, NextResponse } from "next/server";
+import {
+  insertPrediction,
+  getActivePredictions,
+  deleteExpiredPredictions,
+  Prediction,
+} from "@/lib/db/predictions";
 
 // GET /api/predictions - Get active predictions
 export async function GET() {
-    try {
-        // Clean up expired predictions first
-        await deleteExpiredPredictions();
-        
-        const predictions = await getActivePredictions();
-        return NextResponse.json({ predictions });
-    } catch (error) {
-        console.error('Failed to get predictions:', error);
-        return NextResponse.json({ error: 'Failed to get predictions' }, { status: 500 });
-    }
+  try {
+    // Clean up expired predictions first
+    await deleteExpiredPredictions();
+
+    const predictions = await getActivePredictions();
+    return NextResponse.json({ predictions });
+  } catch (error) {
+    console.error("Failed to get predictions:", error);
+    return NextResponse.json(
+      { error: "Failed to get predictions" },
+      { status: 500 },
+    );
+  }
 }
 
 // POST /api/predictions - Insert prediction
 export async function POST(request: NextRequest) {
-    try {
-        const prediction: Prediction = await request.json();
-        const id = await insertPrediction(prediction);
-        return NextResponse.json({ id }, { status: 201 });
-    } catch (error) {
-        console.error('Failed to insert prediction:', error);
-        return NextResponse.json({ error: 'Failed to insert prediction' }, { status: 500 });
-    }
+  try {
+    const prediction: Prediction = await request.json();
+    const id = await insertPrediction(prediction);
+    return NextResponse.json({ id }, { status: 201 });
+  } catch (error) {
+    console.error("Failed to insert prediction:", error);
+    return NextResponse.json(
+      { error: "Failed to insert prediction" },
+      { status: 500 },
+    );
+  }
 }
