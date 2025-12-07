@@ -21,6 +21,11 @@ import { useState, useEffect, useRef } from 'react';
 import AdminPanel from './AdminPanel';
 import UserReportButton from './UserReportButton';
 import WeatherPanel from './WeatherPanel';
+import SearchBox from './SearchBox';
+import RoutePanel from './RoutePanel';
+import AICrawlerButton from './AICrawlerButton';
+import CommunityFeed from './CommunityFeed';
+import LayerControls from '../LayerControls';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faMap, faCloudSun } from '@fortawesome/free-solid-svg-icons';
 
@@ -82,13 +87,88 @@ export default function Maps({ isAdmin = false }: MapsProps) {
     const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const [userReports, setUserReports] = useState<UserReport[]>([]);
     const [viewMode, setViewMode] = useState<'map' | 'weather'>('map');
+    const routeClickHandlerRef = useRef<((e: any) => void) | null>(null);
+    const [layerVisibility, setLayerVisibility] = useState({
+        floodZones: true,
+        outageZones: true,
+        userReports: true,
+        safeZones: true,
+        routes: true,
+        heatmap: false,
+    });
+    const [heatmapTimeFilter, setHeatmapTimeFilter] = useState<'24h' | '7d' | '30d' | 'all'>('7d');
 
     useEffect(() => {
         setIsMounted(true);
     }, []);
 
-    // Load zones, sensors, and user reports from database on mount
-    useEffect(() => {
+    // Handle layer visibility changes
+    const handleToggleLayer = (layer: string, visible: boolean) => {
+        if (!map) return;
+
+        const layerMap: Record<string, string[]> = {
+            floodZones: ['flood-zones', 'zones-outline'],
+            outageZones: ['outage-zones', 'zones-outline'],
+            userReports: ['user-reports-circle', 'user-reports-pulse'],
+            safeZones: ['safe-zones-circle', 'safe-zones-pulse', 'safe-zones-label'],
+            routes: ['zones-lines', 'route-line', 'route-outline'],
+            heatmap: ['heatmap-layer'],
+        };
+
+        const layers = layerMap[layer] || [];
+        layers.forEach(layerId => {
+            if (map.getLayer(layerId)) {
+                map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
+            }
+        });
+
+        // Update heatmap data when toggling
+        if (layer === 'heatmap' && visible) {
+            updateHeatmapData();
+        }
+    };
+
+    // Update heatmap based on time filter
+    const updateHeatmapData = () => {
+        if (!map || !map.getSource('heatmap-source')) return;
+
+        const now = Date.now();
+        const timeFilterMs: Record<typeof heatmapTimeFilter, number> = {
+            '24h': 24 * 60 * 60 * 1000,
+            '7d': 7 * 24 * 60 * 60 * 1000,
+            '30d': 30 * 24 * 60 * 60 * 1000,
+            'all': Infinity,
+        };
+
+        const cutoffTime = now - timeFilterMs[heatmapTimeFilter];
+        const filteredReports = userReports.filter(report => report.createdAt >= cutoffTime);
+
+        // Create heatmap features with weight based on severity
+        const features = filteredReports.map(report => {
+            const weight = report.severity === 'high' ? 3 : report.severity === 'medium' ? 2 : 1;
+            return {
+                type: 'Feature' as const,
+                geometry: {
+                    type: 'Point' as const,
+                    coordinates: report.location
+                },
+                properties: {
+                    weight
+                }
+            };
+        });
+
+        const source = map.getSource('heatmap-source') as any;
+        if (source) {
+            source.setData({
+                type: 'FeatureCollection',
+                features
+            });
+        }
+    };
+
+    // Function to fetch zones from API
+    const fetchZones = () => {
         fetch('/api/zones')
             .then(res => res.json())
             .then(data => {
@@ -97,6 +177,42 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                 }
             })
             .catch(err => console.error('Failed to load zones:', err));
+    };
+
+    // Load safe zones on map
+    useEffect(() => {
+        if (!map) return;
+
+        import('@/lib/safeZones').then(({ safeZones }) => {
+            const features = safeZones.map(zone => ({
+                type: 'Feature' as const,
+                geometry: {
+                    type: 'Point' as const,
+                    coordinates: zone.location
+                },
+                properties: {
+                    id: zone.id,
+                    name: zone.name,
+                    type: zone.type,
+                    address: zone.address,
+                    capacity: zone.capacity,
+                    phone: zone.phone
+                }
+            }));
+
+            const source = map.getSource('safe-zones');
+            if (source) {
+                (source as any).setData({
+                    type: 'FeatureCollection',
+                    features
+                });
+            }
+        });
+    }, [map]);
+
+    // Load zones, sensors, and user reports from database on mount
+    useEffect(() => {
+        fetchZones();
         
         fetch('/api/user-reports')
             .then(res => res.json())
@@ -195,6 +311,13 @@ export default function Maps({ isAdmin = false }: MapsProps) {
         }
     }, [userReports, map]);
 
+    // Update heatmap when reports or time filter changes
+    useEffect(() => {
+        if (map && map.getSource('heatmap-source')) {
+            updateHeatmapData();
+        }
+    }, [userReports, heatmapTimeFilter, map]);
+
     useEffect(() => {
         if (!isMounted || !mapContainerRef.current || map) return;
 
@@ -251,6 +374,80 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                 data: {
                     type: 'FeatureCollection',
                     features: []
+                }
+            });
+
+            // Add source for safe zones
+            mapInstance.addSource('safe-zones', {
+                type: 'geojson',
+                data: {
+                    type: 'FeatureCollection',
+                    features: []
+                }
+            });
+
+            // Add source for heatmap
+            mapInstance.addSource('heatmap-source', {
+                type: 'geojson',
+                data: {
+                    type: 'FeatureCollection',
+                    features: []
+                }
+            });
+
+            // Add heatmap layer (hidden by default)
+            mapInstance.addLayer({
+                id: 'heatmap-layer',
+                type: 'heatmap',
+                source: 'heatmap-source',
+                layout: {
+                    visibility: 'none'
+                },
+                paint: {
+                    // Increase weight as diameter increases
+                    'heatmap-weight': [
+                        'interpolate',
+                        ['linear'],
+                        ['get', 'weight'],
+                        0, 0,
+                        6, 1
+                    ],
+                    // Increase intensity as zoom level increases
+                    'heatmap-intensity': [
+                        'interpolate',
+                        ['linear'],
+                        ['zoom'],
+                        0, 1,
+                        15, 3
+                    ],
+                    // Color ramp for heatmap - blue to red
+                    'heatmap-color': [
+                        'interpolate',
+                        ['linear'],
+                        ['heatmap-density'],
+                        0, 'rgba(33,102,172,0)',
+                        0.2, 'rgb(103,169,207)',
+                        0.4, 'rgb(209,229,240)',
+                        0.6, 'rgb(253,219,199)',
+                        0.8, 'rgb(239,138,98)',
+                        1, 'rgb(178,24,43)'
+                    ],
+                    // Adjust the heatmap radius by zoom level
+                    'heatmap-radius': [
+                        'interpolate',
+                        ['linear'],
+                        ['zoom'],
+                        0, 2,
+                        15, 20
+                    ],
+                    // Transition from heatmap to circle layer by zoom level
+                    'heatmap-opacity': [
+                        'interpolate',
+                        ['linear'],
+                        ['zoom'],
+                        7, 1,
+                        15, 0.5
+                    ]
                 }
             });
 
@@ -345,11 +542,14 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                 });
             }
 
-            // Add user reports layer
+            // User reports line layer removed - lines only show when selected in community feed
+
+            // Add user reports circle layer (for point reports and line endpoints)
             mapInstance.addLayer({
                 id: 'user-reports-circle',
                 type: 'circle',
                 source: 'user-reports',
+                filter: ['!=', ['get', 'isLine'], true],
                 paint: {
                     'circle-radius': [
                         'case',
@@ -374,7 +574,7 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                 id: 'user-reports-pulse',
                 type: 'circle',
                 source: 'user-reports',
-                filter: ['==', ['get', 'severity'], 'high'],
+                filter: ['all', ['!=', ['get', 'isLine'], true], ['==', ['get', 'severity'], 'high']],
                 paint: {
                     'circle-radius': 20,
                     'circle-color': '#ef4444',
@@ -382,6 +582,67 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                     'circle-stroke-width': 2,
                     'circle-stroke-color': '#ef4444',
                     'circle-stroke-opacity': 0.5
+                }
+            });
+
+            // Add safe zones layer
+            mapInstance.addLayer({
+                id: 'safe-zones-circle',
+                type: 'circle',
+                source: 'safe-zones',
+                paint: {
+                    'circle-radius': 12,
+                    'circle-color': [
+                        'match',
+                        ['get', 'type'],
+                        'hospital', '#ef4444',
+                        'shelter', '#3b82f6',
+                        'high_ground', '#10b981',
+                        'government', '#8b5cf6',
+                        '#6b7280'
+                    ],
+                    'circle-stroke-width': 3,
+                    'circle-stroke-color': '#ffffff',
+                    'circle-opacity': 0.8
+                }
+            });
+
+            // Add safe zones pulse
+            mapInstance.addLayer({
+                id: 'safe-zones-pulse',
+                type: 'circle',
+                source: 'safe-zones',
+                paint: {
+                    'circle-radius': 24,
+                    'circle-color': [
+                        'match',
+                        ['get', 'type'],
+                        'hospital', '#ef4444',
+                        'shelter', '#3b82f6',
+                        'high_ground', '#10b981',
+                        'government', '#8b5cf6',
+                        '#6b7280'
+                    ],
+                    'circle-opacity': 0.2
+                }
+            });
+
+            // Add safe zones label
+            mapInstance.addLayer({
+                id: 'safe-zones-label',
+                type: 'symbol',
+                source: 'safe-zones',
+                layout: {
+                    'text-field': ['get', 'name'],
+                    'text-size': 12,
+                    'text-offset': [0, 1.8],
+                    'text-anchor': 'top',
+                    'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold']
+                },
+                paint: {
+                    'text-color': '#000000',
+                    'text-halo-color': '#ffffff',
+                    'text-halo-width': 2
                 }
             });
 
@@ -457,12 +718,39 @@ export default function Maps({ isAdmin = false }: MapsProps) {
             }, 200);
         };
 
+        const handleSafeZoneClick = (e: any) => {
+            if (!e.features || e.features.length === 0) return;
+            const feature = e.features[0];
+            const props = feature.properties;
+            
+            const popup = new vietmapgl.Popup({ offset: 25, closeButton: true, closeOnClick: false })
+                .setLngLat(e.lngLat)
+                .setHTML(`
+                    <div style="min-width: 200px;">
+                        <h3 style="font-weight: bold; margin-bottom: 8px; font-size: 14px;">${props.name}</h3>
+                        <p style="margin: 4px 0; font-size: 12px; color: #4b5563;"><strong>Loại:</strong> ${
+                            props.type === 'hospital' ? '🏥 Bệnh viện' :
+                            props.type === 'shelter' ? '🏢 Nơi trú ẩn' :
+                            props.type === 'high_ground' ? '⛰️ Vị trí cao' :
+                            props.type === 'government' ? '🏛️ Cơ quan chính phủ' : 'Khác'
+                        }</p>
+                        <p style="margin: 4px 0; font-size: 12px; color: #4b5563;"><strong>Địa chỉ:</strong> ${props.address}</p>
+                        ${props.capacity ? `<p style="margin: 4px 0; font-size: 12px; color: #4b5563;"><strong>Sức chứa:</strong> ${props.capacity} người</p>` : ''}
+                        ${props.phone ? `<p style="margin: 4px 0; font-size: 12px; color: #4b5563;"><strong>Điện thoại:</strong> ${props.phone}</p>` : ''}
+                    </div>
+                `)
+                .addTo(map);
+        };
+
         map.on('mousemove', 'flood-zones', handleFloodHover);
         map.on('mousemove', 'outage-zones', handleOutageHover);
         map.on('mousemove', 'zones-lines', handleLineHover);
         map.on('mouseleave', 'flood-zones', handleLeave);
         map.on('mouseleave', 'outage-zones', handleLeave);
         map.on('mouseleave', 'zones-lines', handleLeave);
+        map.on('click', 'safe-zones-circle', handleSafeZoneClick);
+        map.on('mouseenter', 'safe-zones-circle', () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', 'safe-zones-circle', () => { map.getCanvas().style.cursor = ''; });
 
         return () => {
             map.off('mousemove', 'flood-zones', handleFloodHover);
@@ -471,6 +759,9 @@ export default function Maps({ isAdmin = false }: MapsProps) {
             map.off('mouseleave', 'flood-zones', handleLeave);
             map.off('mouseleave', 'outage-zones', handleLeave);
             map.off('mouseleave', 'zones-lines', handleLeave);
+            map.off('click', 'safe-zones-circle', handleSafeZoneClick);
+            map.off('mouseenter', 'safe-zones-circle', () => { map.getCanvas().style.cursor = 'pointer'; });
+            map.off('mouseleave', 'safe-zones-circle', () => { map.getCanvas().style.cursor = ''; });
         };
     }, [map, zones]);
 
@@ -484,7 +775,7 @@ export default function Maps({ isAdmin = false }: MapsProps) {
             const feature = e.features[0];
             const props = feature.properties;
             
-            const popup = new (window as any).maplibregl.Popup({ offset: 25 })
+            const popup = new vietmapgl.Popup({ offset: 25, closeButton: true, closeOnClick: false })
                 .setLngLat(feature.geometry.coordinates)
                 .setHTML(`
                     <div class="p-3 min-w-[250px]">
@@ -540,9 +831,26 @@ export default function Maps({ isAdmin = false }: MapsProps) {
         };
     }, [map, userReports]);
 
+    // Handle route point selection
+    useEffect(() => {
+        if (!map) return;
+
+        const handleClick = (e: any) => {
+            if (routeClickHandlerRef.current) {
+                routeClickHandlerRef.current(e);
+            }
+        };
+
+        map.on('click', handleClick);
+
+        return () => {
+            map.off('click', handleClick);
+        };
+    }, [map]);
+
     // Handle zone drawing
     useEffect(() => {
-        if (!map || !isDrawing) return;
+        if (!map || !isDrawing || routeClickHandlerRef.current) return;
 
         let centerPoint: number[] | null = drawingCenter;
         let currentRadius = drawingRadius;
@@ -861,13 +1169,8 @@ export default function Maps({ isAdmin = false }: MapsProps) {
     const updateUserReportsOnMap = (reportsData: UserReport[]) => {
         if (!map) return;
 
-        const features = reportsData.map(report => ({
-            type: 'Feature' as const,
-            geometry: {
-                type: 'Point' as const,
-                coordinates: report.location
-            },
-            properties: {
+        const features = reportsData.flatMap(report => {
+            const props = {
                 id: report.id,
                 type: report.type,
                 severity: report.severity,
@@ -875,8 +1178,24 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                 reporterName: report.reporterName || 'Ẩn danh',
                 status: report.status,
                 createdAt: report.createdAt
+            };
+
+            // Check if report has multiple coordinates (line report)
+            if ((report as any).coordinates && (report as any).coordinates.length > 1) {
+                // Line reports don't show on map by default - only when selected in community feed
+                return [];
             }
-        }));
+
+            // Single point report
+            return [{
+                type: 'Feature' as const,
+                geometry: {
+                    type: 'Point' as const,
+                    coordinates: report.location
+                },
+                properties: props
+            }];
+        });
 
         const source = map.getSource('user-reports') as any;
         if (source) {
@@ -979,6 +1298,41 @@ export default function Maps({ isAdmin = false }: MapsProps) {
         }
     }, [zones, map]);
 
+    const handleSelectLocation = async (refId: string, display: string) => {
+        try {
+            const apiKey = process.env.NEXT_PUBLIC_VIETMAP_API_KEY;
+            const response = await fetch(`https://maps.vietmap.vn/api/place/v4?apikey=${apiKey}&refid=${encodeURIComponent(refId)}`);
+            const data = await response.json();
+            
+            if (data && data.lat && data.lng) {
+                // Smooth animated transition to location
+                map?.flyTo({
+                    center: [data.lng, data.lat],
+                    zoom: 16,
+                    duration: 2500, // Increased duration for smoother feel
+                    essential: true, // Animation will complete even if user interacts
+                    easing: (t) => t * (2 - t) // Ease-out quadratic for smooth deceleration
+                });
+                
+                // Add a temporary marker with animation
+                const marker = new vietmapgl.Marker({ color: '#3b82f6' })
+                    .setLngLat([data.lng, data.lat])
+                    .setPopup(
+                        new vietmapgl.Popup({ offset: 25, closeButton: true, closeOnClick: false })
+                            .setHTML(`<div class="p-2"><strong>${display}</strong></div>`)
+                    )
+                    .addTo(map!);
+                
+                // Open popup after a brief delay for better UX
+                setTimeout(() => {
+                    marker.togglePopup();
+                }, 2600);
+            }
+        } catch (error) {
+            console.error('Failed to get place details:', error);
+        }
+    };
+
     if (!isMounted) {
         return <div style={{ width: '100vw', height: '100vh', backgroundColor: '#f0f0f0' }} />;
     }
@@ -986,6 +1340,14 @@ export default function Maps({ isAdmin = false }: MapsProps) {
     return (
         <>
             <div id="map" ref={mapContainerRef} style={{ width: '100vw', height: '100vh' }} />
+            
+            {/* Search Box - Top center for all users */}
+            <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-30">
+                <SearchBox 
+                    onSelectLocation={handleSelectLocation}
+                    mapCenter={map ? [map.getCenter().lng, map.getCenter().lat] : undefined}
+                />
+            </div>
             
             {/* Hover Popup */}
             {hoveredZone && popupPosition && (
@@ -1095,8 +1457,11 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                         onDrawZone={handleDrawZone}
                         onClearZones={handleClearZones}
                     />
+                    <div className="fixed top-4 right-4 z-[60]">
+                        <AICrawlerButton onZonesCreated={fetchZones} />
+                    </div>
                     {isDrawing && (
-                        <div className="fixed top-4 right-4 z-50 bg-yellow-500 text-white px-4 py-2 rounded-lg shadow-lg">
+                        <div className="fixed top-32 right-4 z-50 bg-yellow-500 text-white px-4 py-2 rounded-lg shadow-lg">
                             {drawingShape === 'circle' ? (
                                 !drawingCenter 
                                     ? `Click to set center of ${drawingType} zone`
@@ -1109,6 +1474,9 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                 </>
             )}
 
+            {/* Community Feed - Always visible on left for non-admin users */}
+            {!isAdmin && <CommunityFeed map={map} />}
+            
             {/* User Report Button - Always visible for all users */}
             {!isAdmin && <UserReportButton map={map} />}
 
@@ -1122,7 +1490,7 @@ export default function Maps({ isAdmin = false }: MapsProps) {
 
             {/* View Mode Switcher - Only for non-admin users */}
             {!isAdmin && (
-                <div className="fixed top-4 right-4 z-50 flex gap-2">
+                <div className="fixed top-4 left-4 z-40 flex gap-2">
                     <button
                         onClick={() => setViewMode('map')}
                         className={`px-4 py-2 rounded-lg font-semibold transition-all shadow-lg ${
@@ -1147,6 +1515,16 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                     </button>
                 </div>
             )}
+
+            {/* Layer Controls */}
+            <LayerControls 
+                onToggleLayer={handleToggleLayer}
+                heatmapTimeFilter={heatmapTimeFilter}
+                onHeatmapTimeFilterChange={setHeatmapTimeFilter}
+            />
+
+            {/* Route Panel - Available for all users */}
+            {!isAdmin && <RoutePanel map={map} zones={zones} onMapClick={(handler) => { routeClickHandlerRef.current = handler; }} />}
         </>
     );
 }

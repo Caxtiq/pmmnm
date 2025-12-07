@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      args:
+        - NEXT_PUBLIC_VIETMAP_API_KEY=${NEXT_PUBLIC_VIETMAP_API_KEY}
+    ports:
+      - "3001:3001"
+      - "3002:3002"
+    environment:
+      - MONGODB_URI=mongodb://mongo:27017/svattt
+      - NEXT_PUBLIC_VIETMAP_API_KEY=${NEXT_PUBLIC_VIETMAP_API_KEY}
+      - PORT=3001
+      - NODE_ENV=production
+    depends_on:
+      - mongo
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    restart: unless-stopped
+
+volumes:
+  mongodb_data:

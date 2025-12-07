@@ -16,11 +16,7 @@
 
 import { MongoClient, Db } from "mongodb";
 
-if (!process.env.MONGODB_URI) {
-  throw new Error("Please add your MongoDB URI to .env.local");
-}
-
-const uri = process.env.MONGODB_URI;
+const uri = process.env.MONGODB_URI || "mongodb://localhost:27017/svattt";
 const options = {};
 
 let client: MongoClient;
@@ -51,6 +47,9 @@ export default clientPromise;
 
 // Helper function to get the database
 export async function getDatabase(): Promise<Db> {
+  if (!process.env.MONGODB_URI) {
+    throw new Error("Please add your MongoDB URI to .env.local");
+  }
   const client = await clientPromise;
   return client.db("svattt");
 }

@@ -75,6 +75,7 @@ export async function POST(request: NextRequest) {
         const report = await createUserReport({
             type: data.type,
             location: data.location,
+            coordinates: data.coordinates, // Include coordinates for line reports
             description: data.description,
             severity: data.severity,
             reporterName: data.reporterName,

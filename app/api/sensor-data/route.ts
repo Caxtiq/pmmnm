@@ -46,14 +46,14 @@ export async function POST(request: NextRequest) {
     const data: SensorData = await request.json();
 
     // Validate required fields
-    if (!data.sensorId || typeof data.value !== "number") {
+    if (!data.sensorId) {
       return NextResponse.json(
         {
           error: "Invalid request format",
-          required: { sensorId: "string", value: "number" },
+          required: { sensorId: "string" },
           example: {
             sensorId: "sensor-123",
-            value: 5.2,
+            waterLevel: 5.2,
             timestamp: 1234567890,
           },
         },
@@ -79,9 +79,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Trigger automation rules
+    const sensorValue = data.waterLevel ?? data.temperature ?? data.humidity ?? 0;
     const sensorReading = {
       sensorId: data.sensorId,
-      value: data.value,
+      value: sensorValue,
       timestamp: data.timestamp || Date.now(),
       sensorName: sensor.name,
       type: sensor.type,
@@ -97,9 +98,9 @@ export async function POST(request: NextRequest) {
           id: sensor.id,
           name: sensor.name,
           threshold: sensor.threshold,
-          currentValue: data.value,
+          currentValue: sensorValue,
         },
-        thresholdExceeded: data.value > sensor.threshold,
+        thresholdExceeded: sensorValue > sensor.threshold,
         automation: {
           rulesChecked: executionResults.rulesChecked,
           rulesTriggered: executionResults.rulesTriggered,

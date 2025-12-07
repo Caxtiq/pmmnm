@@ -28,12 +28,14 @@ import {
     faCheckCircle
 } from '@fortawesome/free-solid-svg-icons';
 import vietmapgl from '@vietmap/vietmap-gl-js/dist/vietmap-gl.js';
+import { useToast } from '@/components/ToastProvider';
 
 interface UserReportButtonProps {
     map?: any;
 }
 
 export default function UserReportButton({ map }: UserReportButtonProps) {
+    const { showToast } = useToast();
     const [isOpen, setIsOpen] = useState(false);
     const [isSelectingLocation, setIsSelectingLocation] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -45,8 +47,10 @@ export default function UserReportButton({ map }: UserReportButtonProps) {
         description: '',
         severity: 'medium' as 'low' | 'medium' | 'high',
         reporterName: '',
-        reporterContact: ''
+        reporterContact: '',
+        images: [] as string[] // Image URLs from GCS
     });
+    const [uploadingImages, setUploadingImages] = useState<boolean>(false);
     const [tempMarkers, setTempMarkers] = useState<any[]>([]);
     const [tempLineLayer, setTempLineLayer] = useState<string | null>(null);
 
@@ -153,7 +157,7 @@ export default function UserReportButton({ map }: UserReportButtonProps) {
 
         const finishSelection = () => {
             if (points.length === 0) {
-                alert('Vui lòng chọn ít nhất một điểm');
+                showToast('Vui lòng chọn ít nhất một điểm', 'warning');
                 return;
             }
 
@@ -192,16 +196,65 @@ export default function UserReportButton({ map }: UserReportButtonProps) {
         map.on('dblclick', handleDblClick);
     };
 
+    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = e.target.files;
+        if (!files || files.length === 0) return;
+
+        if (formData.images.length + files.length > 5) {
+            showToast('Tối đa 5 ảnh', 'warning');
+            return;
+        }
+
+        setUploadingImages(true);
+
+        try {
+            const uploadPromises = Array.from(files).map(async (file) => {
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!response.ok) {
+                    throw new Error('Upload failed');
+                }
+
+                const data = await response.json();
+                return data.url;
+            });
+
+            const imageUrls = await Promise.all(uploadPromises);
+            setFormData(prev => ({
+                ...prev,
+                images: [...prev.images, ...imageUrls]
+            }));
+        } catch (error) {
+            console.error('Image upload error:', error);
+            showToast('Không thể tải ảnh lên', 'error');
+        } finally {
+            setUploadingImages(false);
+        }
+    };
+
+    const removeImage = (index: number) => {
+        setFormData(prev => ({
+            ...prev,
+            images: prev.images.filter((_, i) => i !== index)
+        }));
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         
         if (!formData.location) {
-            alert('Vui lòng chọn vị trí trên bản đồ');
+            showToast('Vui lòng chọn vị trí trên bản đồ', 'warning');
             return;
         }
 
         if (!formData.description.trim()) {
-            alert('Vui lòng mô tả tình huống');
+            showToast('Vui lòng mô tả tình huống', 'warning');
             return;
         }
 
@@ -218,17 +271,18 @@ export default function UserReportButton({ map }: UserReportButtonProps) {
 
             if (response.ok) {
                 setShowSuccess(true);
+                showToast('Đã gửi báo cáo thành công!', 'success');
                 setTimeout(() => {
                     setShowSuccess(false);
                     setIsOpen(false);
                     resetForm();
                 }, 3000);
             } else {
-                alert('Lỗi: ' + (data.error || 'Không thể gửi báo cáo'));
+                showToast('Lỗi: ' + (data.error || 'Không thể gửi báo cáo'), 'error');
             }
         } catch (error) {
             console.error('Failed to submit report:', error);
-            alert('Không thể kết nối đến máy chủ. Vui lòng thử lại.');
+            showToast('Không thể kết nối đến máy chủ. Vui lòng thử lại.', 'error');
         } finally {
             setIsSubmitting(false);
         }
@@ -242,7 +296,8 @@ export default function UserReportButton({ map }: UserReportButtonProps) {
             description: '',
             severity: 'medium',
             reporterName: '',
-            reporterContact: ''
+            reporterContact: '',
+            images: []
         });
         
         // Clean up markers
@@ -267,10 +322,10 @@ export default function UserReportButton({ map }: UserReportButtonProps) {
             {/* Floating Report Button */}
             <button
                 onClick={() => setIsOpen(true)}
-                className="fixed bottom-6 right-6 z-50 bg-red-500 hover:bg-red-600 text-white rounded-full p-4 shadow-2xl transition-all transform hover:scale-110 focus:outline-none focus:ring-4 focus:ring-red-300"
+                className="fixed bottom-24 right-4 z-30 bg-red-500 hover:bg-red-600 text-white rounded-full p-4 shadow-2xl transition-all hover:shadow-xl"
                 title="Báo cáo sự cố"
             >
-                <FontAwesomeIcon icon={faExclamationTriangle} className="text-2xl" />
+                <FontAwesomeIcon icon={faExclamationTriangle} size="lg" />
             </button>
 
             {/* Location Selection Indicator */}
@@ -458,6 +513,58 @@ export default function UserReportButton({ map }: UserReportButtonProps) {
                                         className="w-full p-3 border-2 border-gray-300 rounded-xl focus:border-red-400 focus:outline-none resize-none"
                                         required
                                     />
+                                </div>
+
+                                {/* Image Upload */}
+                                <div>
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                                        Hình Ảnh (tối đa 5 ảnh)
+                                    </label>
+                                    <div className="space-y-3">
+                                        {formData.images.length > 0 && (
+                                            <div className="grid grid-cols-3 gap-2">
+                                                {formData.images.map((img, idx) => (
+                                                    <div key={idx} className="relative group">
+                                                        <img 
+                                                            src={img} 
+                                                            alt={`Upload ${idx + 1}`}
+                                                            className="w-full h-24 object-cover rounded-lg"
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => removeImage(idx)}
+                                                            className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                                        >
+                                                            <FontAwesomeIcon icon={faTimes} className="text-xs" />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                        {formData.images.length < 5 && (
+                                            <label className="block w-full p-4 border-2 border-dashed border-gray-300 rounded-xl hover:border-red-400 transition-colors cursor-pointer text-center">
+                                                <input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    multiple
+                                                    onChange={handleImageUpload}
+                                                    className="hidden"
+                                                    disabled={uploadingImages}
+                                                />
+                                                <div className="text-gray-600">
+                                                    {uploadingImages ? (
+                                                        <span>⏳ Đang tải lên...</span>
+                                                    ) : (
+                                                        <>
+                                                            <span className="text-2xl">📷</span>
+                                                            <p className="text-sm font-semibold mt-1">Tải ảnh lên</p>
+                                                            <p className="text-xs text-gray-500">Tối đa 5MB/ảnh</p>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </label>
+                                        )}
+                                    </div>
                                 </div>
 
                                 {/* Optional Contact Info */}

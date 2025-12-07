@@ -22,14 +22,21 @@ export interface UserReport {
     id?: string;
     type: 'flood' | 'outage' | 'other';
     location: [number, number]; // [lng, lat]
+    coordinates?: number[][]; // for line reports
     description: string;
     severity: 'low' | 'medium' | 'high';
     reporterName?: string;
     reporterContact?: string;
+    reporterId?: string; // user ID
     status: 'new' | 'investigating' | 'resolved';
     createdAt: number;
     updatedAt?: number;
-    images?: string[]; // URLs to uploaded images
+    images?: string[]; // GCS URLs
+    upvotes?: string[]; // user IDs who upvoted
+    downvotes?: string[]; // user IDs who downvoted
+    voteScore?: number; // upvotes - downvotes
+    zoneCreated?: boolean; // auto-zone already created
+    adminApproved?: boolean; // approved by admin to create zone
 }
 
 // Create a new user report
@@ -90,6 +97,84 @@ export async function updateReportStatus(reportId: string, status: 'new' | 'inve
         { id: reportId },
         { $set: { status, updatedAt: Date.now() } }
     );
+}
+
+// Vote on a report
+export async function voteOnReport(reportId: string, userId: string, voteType: 'up' | 'down'): Promise<{ success: boolean; voteScore: number }> {
+    const db = await getDatabase();
+    const collection = db.collection(COLLECTION);
+    
+    const report = await collection.findOne({ id: reportId });
+    if (!report) {
+        return { success: false, voteScore: 0 };
+    }
+    
+    const upvotes = report.upvotes || [];
+    const downvotes = report.downvotes || [];
+    
+    // Remove user from both arrays first
+    const newUpvotes = upvotes.filter((id: string) => id !== userId);
+    const newDownvotes = downvotes.filter((id: string) => id !== userId);
+    
+    // Add to appropriate array
+    if (voteType === 'up') {
+        newUpvotes.push(userId);
+    } else {
+        newDownvotes.push(userId);
+    }
+    
+    const voteScore = newUpvotes.length - newDownvotes.length;
+    
+    await collection.updateOne(
+        { id: reportId },
+        { 
+            $set: { 
+                upvotes: newUpvotes,
+                downvotes: newDownvotes,
+                voteScore,
+                updatedAt: Date.now()
+            }
+        }
+    );
+    
+    return { success: true, voteScore };
+}
+
+// Remove vote from a report
+export async function removeVote(reportId: string, userId: string): Promise<{ success: boolean; voteScore: number }> {
+    const db = await getDatabase();
+    const collection = db.collection(COLLECTION);
+    
+    const report = await collection.findOne({ id: reportId });
+    if (!report) {
+        return { success: false, voteScore: 0 };
+    }
+    
+    const upvotes = (report.upvotes || []).filter((id: string) => id !== userId);
+    const downvotes = (report.downvotes || []).filter((id: string) => id !== userId);
+    const voteScore = upvotes.length - downvotes.length;
+    
+    await collection.updateOne(
+        { id: reportId },
+        { 
+            $set: { 
+                upvotes,
+                downvotes,
+                voteScore,
+                updatedAt: Date.now()
+            }
+        }
+    );
+    
+    return { success: true, voteScore };
+}
+
+// Get a single report by ID
+export async function getReportById(reportId: string): Promise<UserReport | null> {
+    const db = await getDatabase();
+    const report = await db.collection(COLLECTION).findOne({ id: reportId });
+    if (!report) return null;
+    return { ...report, _id: undefined } as any;
 }
 
 // Delete a report
