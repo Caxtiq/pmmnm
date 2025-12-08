@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Generate PWA Icons</title>
+</head>
+<body>
+  <h1>PWA Icon Generator</h1>
+  <p>Right-click and "Save As" for each icon size:</p>
+  
+  <h2>192x192 Icon:</h2>
+  <canvas id="icon192" width="192" height="192"></canvas>
+  
+  <h2>512x512 Icon:</h2>
+  <canvas id="icon512" width="512" height="512"></canvas>
+
+  <script>
+    function generateIcon(canvasId, size) {
+      const canvas = document.getElementById(canvasId);
+      const ctx = canvas.getContext('2d');
+      
+      // Background gradient
+      const gradient = ctx.createLinearGradient(0, 0, size, size);
+      gradient.addColorStop(0, '#3b82f6');
+      gradient.addColorStop(1, '#1e40af');
+      
+      // Rounded rectangle background
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.roundRect(0, 0, size, size, size * 0.2);
+      ctx.fill();
+      
+      const scale = size / 192;
+      
+      // Water waves
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = 8 * scale;
+      ctx.lineCap = 'round';
+      
+      for(let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.moveTo(36 * scale, (60 + i * 20) * scale);
+        for(let x = 36; x < 120; x += 20) {
+          ctx.quadraticCurveTo(
+            (x + 10) * scale, (50 + i * 20) * scale,
+            (x + 20) * scale, (60 + i * 20) * scale
+          );
+        }
+        ctx.globalAlpha = 0.9 - i * 0.2;
+        ctx.stroke();
+      }
+      
+      ctx.globalAlpha = 1;
+      
+      // Lightning bolt
+      ctx.fillStyle = '#fbbf24';
+      ctx.strokeStyle = 'white';
+      ctx.lineWidth = 3 * scale;
+      ctx.beginPath();
+      ctx.moveTo(140 * scale, 50 * scale);
+      ctx.lineTo(120 * scale, 90 * scale);
+      ctx.lineTo(135 * scale, 90 * scale);
+      ctx.lineTo(115 * scale, 140 * scale);
+      ctx.lineTo(145 * scale, 95 * scale);
+      ctx.lineTo(130 * scale, 95 * scale);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      
+      // Map marker
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.beginPath();
+      ctx.arc(96 * scale, 140 * scale, 20 * scale, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath();
+      ctx.arc(96 * scale, 140 * scale, 12 * scale, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Convert to downloadable link
+      const link = document.createElement('a');
+      link.download = `icon-${size}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.textContent = `Download icon-${size}.png`;
+      link.style.display = 'block';
+      link.style.marginTop = '10px';
+      canvas.parentElement.appendChild(link);
+    }
+    
+    generateIcon('icon192', 192);
+    generateIcon('icon512', 512);
+  </script>
+</body>
+</html>

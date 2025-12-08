@@ -1,0 +1,59 @@
+{
+  "name": "Hệ Thống Cảnh Báo Lũ Lụt & Mất Điện",
+  "short_name": "Cảnh Báo Thiên Tai",
+  "description": "Hệ thống cảnh báo và theo dõi lũ lụt, mất điện với bản đồ thời gian thực",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#3b82f6",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshot-1.png",
+      "sizes": "1280x720",
+      "type": "image/png"
+    }
+  ],
+  "categories": ["utilities", "navigation", "news"],
+  "shortcuts": [
+    {
+      "name": "Báo cáo sự cố",
+      "short_name": "Báo cáo",
+      "description": "Báo cáo lũ lụt hoặc mất điện",
+      "url": "/?report=new",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Xem bản đồ",
+      "short_name": "Bản đồ",
+      "description": "Xem bản đồ cảnh báo",
+      "url": "/",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ]
+}

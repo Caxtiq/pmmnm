@@ -18,6 +18,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/lib/themeContext";
 import { ToastProvider } from "@/components/ToastProvider";
+import PWAInstaller from "@/components/PWAInstaller";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -33,6 +34,26 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Hệ Thống Cảnh Báo Lũ Lụt & Tắc Đường",
   description: "Hệ thống theo dõi và cảnh báo tự động cho lũ lụt và tắc đường",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Cảnh Báo Thiên Tai",
+  },
+  applicationName: "Hệ Thống Cảnh Báo Thiên Tai",
+  formatDetection: {
+    telephone: false,
+  },
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#3b82f6" },
+    { media: "(prefers-color-scheme: dark)", color: "#1e40af" },
+  ],
+  viewport: {
+    width: "device-width",
+    initialScale: 1,
+    maximumScale: 5,
+    userScalable: true,
+  },
 };
 
 export default function RootLayout({
@@ -43,6 +64,13 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        <link rel="manifest" href="/manifest.json" />
+        <link rel="apple-touch-icon" href="/icon-192.png" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="Cảnh Báo Thiên Tai" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="theme-color" content="#3b82f6" />
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -62,6 +90,7 @@ export default function RootLayout({
       >
         <ThemeProvider>
           <ToastProvider>
+            <PWAInstaller />
             {children}
           </ToastProvider>
         </ThemeProvider>
