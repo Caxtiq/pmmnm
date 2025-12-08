@@ -1,8 +1,24 @@
+/*
+ * Copyright 2025 PKA-OpenLD
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 // Notification Service for Real-time Alerts
 export interface NotificationPreferences {
   enabled: boolean;
-  severityLevels: ('high' | 'medium' | 'low')[];
-  types: ('flood' | 'outage' | 'zone' | 'all')[];
+  severityLevels: ("high" | "medium" | "low")[];
+  types: ("flood" | "outage" | "zone" | "all")[];
   radius: number; // in meters
   sound: boolean;
 }
@@ -11,8 +27,8 @@ export interface NotificationData {
   id: string;
   title: string;
   body: string;
-  type: 'zone' | 'report' | 'alert';
-  severity: 'high' | 'medium' | 'low';
+  type: "zone" | "report" | "alert";
+  severity: "high" | "medium" | "low";
   location?: [number, number];
   timestamp: Date;
   read: boolean;
@@ -41,18 +57,18 @@ class NotificationService {
 
   // Request notification permission
   public async requestPermission(): Promise<boolean> {
-    if (!('Notification' in window)) {
-      console.log('This browser does not support notifications');
+    if (!("Notification" in window)) {
+      console.log("This browser does not support notifications");
       return false;
     }
 
-    if (Notification.permission === 'granted') {
+    if (Notification.permission === "granted") {
       return true;
     }
 
-    if (Notification.permission !== 'denied') {
+    if (Notification.permission !== "denied") {
       const permission = await Notification.requestPermission();
-      return permission === 'granted';
+      return permission === "granted";
     }
 
     return false;
@@ -60,13 +76,13 @@ class NotificationService {
 
   // Show browser notification
   public showNotification(notification: NotificationData) {
-    if (Notification.permission === 'granted') {
+    if (Notification.permission === "granted") {
       const notif = new Notification(notification.title, {
         body: notification.body,
-        icon: '/notification-icon.png',
-        badge: '/badge-icon.png',
+        icon: "/notification-icon.png",
+        badge: "/badge-icon.png",
         tag: notification.id,
-        requireInteraction: notification.severity === 'high',
+        requireInteraction: notification.severity === "high",
         silent: !this.getPreferences().sound,
       });
 
@@ -89,11 +105,11 @@ class NotificationService {
       return;
     }
 
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001';
+    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:3001";
     this.ws = new WebSocket(`${wsUrl}?userId=${userId}`);
 
     this.ws.onopen = () => {
-      console.log('WebSocket connected for notifications');
+      console.log("WebSocket connected for notifications");
       this.reconnectAttempts = 0;
     };
 
@@ -102,16 +118,16 @@ class NotificationService {
         const notification: NotificationData = JSON.parse(event.data);
         this.handleIncomingNotification(notification);
       } catch (error) {
-        console.error('Failed to parse notification:', error);
+        console.error("Failed to parse notification:", error);
       }
     };
 
     this.ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
+      console.error("WebSocket error:", error);
     };
 
     this.ws.onclose = () => {
-      console.log('WebSocket closed');
+      console.log("WebSocket closed");
       this.attemptReconnect(userId);
     };
   }
@@ -127,7 +143,7 @@ class NotificationService {
   // Handle incoming notification
   private handleIncomingNotification(notification: NotificationData) {
     const prefs = this.getPreferences();
-    
+
     // Check if notifications are enabled
     if (!prefs.enabled) return;
 
@@ -135,8 +151,8 @@ class NotificationService {
     if (!prefs.severityLevels.includes(notification.severity)) return;
 
     // Check type filter
-    if (!prefs.types.includes('all')) {
-      const notifType = notification.type === 'zone' ? 'zone' : 'flood'; // Simplified
+    if (!prefs.types.includes("all")) {
+      const notifType = notification.type === "zone" ? "zone" : "flood"; // Simplified
       if (!prefs.types.includes(notifType)) return;
     }
 
@@ -148,7 +164,7 @@ class NotificationService {
             position.coords.latitude,
             position.coords.longitude,
             notification.location![1],
-            notification.location![0]
+            notification.location![0],
           );
 
           if (distance <= prefs.radius) {
@@ -157,11 +173,11 @@ class NotificationService {
           }
         },
         (error) => {
-          console.error('Location error:', error);
+          console.error("Location error:", error);
           // Show notification anyway if location fails
           this.showNotification(notification);
           this.notifyListeners(notification);
-        }
+        },
       );
     } else {
       this.showNotification(notification);
@@ -170,16 +186,21 @@ class NotificationService {
   }
 
   // Calculate distance between two points (Haversine formula)
-  private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  private calculateDistance(
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number,
+  ): number {
     const R = 6371e3; // Earth radius in meters
-    const φ1 = lat1 * Math.PI / 180;
-    const φ2 = lat2 * Math.PI / 180;
-    const Δφ = (lat2 - lat1) * Math.PI / 180;
-    const Δλ = (lon2 - lon1) * Math.PI / 180;
+    const φ1 = (lat1 * Math.PI) / 180;
+    const φ2 = (lat2 * Math.PI) / 180;
+    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
 
-    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-              Math.cos(φ1) * Math.cos(φ2) *
-              Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const a =
+      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
     return R * c;
@@ -187,22 +208,22 @@ class NotificationService {
 
   // Preferences management
   public getPreferences(): NotificationPreferences {
-    if (typeof window === 'undefined') {
+    if (typeof window === "undefined") {
       return this.getDefaultPreferences();
     }
-    const stored = localStorage.getItem('notification_preferences');
+    const stored = localStorage.getItem("notification_preferences");
     return stored ? JSON.parse(stored) : this.getDefaultPreferences();
   }
 
   public setPreferences(prefs: NotificationPreferences) {
-    localStorage.setItem('notification_preferences', JSON.stringify(prefs));
+    localStorage.setItem("notification_preferences", JSON.stringify(prefs));
   }
 
   private getDefaultPreferences(): NotificationPreferences {
     return {
       enabled: true,
-      severityLevels: ['high', 'medium', 'low'],
-      types: ['all'],
+      severityLevels: ["high", "medium", "low"],
+      types: ["all"],
       radius: 5000, // 5km default
       sound: true,
     };
@@ -210,13 +231,13 @@ class NotificationService {
 
   // Notification history management
   private loadNotifications() {
-    if (typeof window === 'undefined') return;
-    const stored = localStorage.getItem('notifications');
+    if (typeof window === "undefined") return;
+    const stored = localStorage.getItem("notifications");
     this.notifications = stored ? JSON.parse(stored) : [];
   }
 
   private saveNotifications() {
-    localStorage.setItem('notifications', JSON.stringify(this.notifications));
+    localStorage.setItem("notifications", JSON.stringify(this.notifications));
   }
 
   private addNotification(notification: NotificationData) {
@@ -233,11 +254,11 @@ class NotificationService {
   }
 
   public getUnreadCount(): number {
-    return this.notifications.filter(n => !n.read).length;
+    return this.notifications.filter((n) => !n.read).length;
   }
 
   public markAsRead(id: string) {
-    const notification = this.notifications.find(n => n.id === id);
+    const notification = this.notifications.find((n) => n.id === id);
     if (notification) {
       notification.read = true;
       this.saveNotifications();
@@ -245,7 +266,7 @@ class NotificationService {
   }
 
   public markAllAsRead() {
-    this.notifications.forEach(n => n.read = true);
+    this.notifications.forEach((n) => (n.read = true));
     this.saveNotifications();
   }
 
@@ -260,11 +281,11 @@ class NotificationService {
   }
 
   public removeListener(listener: (notification: NotificationData) => void) {
-    this.listeners = this.listeners.filter(l => l !== listener);
+    this.listeners = this.listeners.filter((l) => l !== listener);
   }
 
   private notifyListeners(notification: NotificationData) {
-    this.listeners.forEach(listener => listener(notification));
+    this.listeners.forEach((listener) => listener(notification));
   }
 
   // Disconnect WebSocket
