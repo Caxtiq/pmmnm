@@ -1,6 +1,16 @@
-# FORMS-app - Flood & Traffic Alert System
+<p align="center">
+  <img src="docs/FORMS_logo.png" alt="FORMS Logo" width="600"/>
+</p>
 
-Real-time flood and traffic alert system with sensor integration, automated zone creation, and user reporting.
+<h1 align="center">
+  🚦 Flood and Outage Risk Management System 🌧️
+</h1>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Competition-OLP__2025-blue?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/License-Apache__2.0-green?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Version-1.1.0-green?style=for-the-badge" />
+</p>
 
 ## Features
 
