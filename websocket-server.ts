@@ -1,4 +1,19 @@
 import { Server, ServerWebSocket } from 'bun';
+/*
+ * Copyright 2025 PKA-OpenLD
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 interface WebSocketData {
   userId: string;
@@ -6,32 +21,33 @@ interface WebSocketData {
 
 const server = Bun.serve<WebSocketData>({
   port: 3001,
-  
+
   fetch(req, server) {
     const url = new URL(req.url);
-    
+
     // WebSocket upgrade
-    if (req.headers.get('upgrade') === 'websocket') {
-      const userId = url.searchParams.get('userId');
+    if (req.headers.get("upgrade") === "websocket") {
+      const userId = url.searchParams.get("userId");
       if (!userId) {
-        return new Response('Missing userId', { status: 400 });
+        return new Response("Missing userId", { status: 400 });
       }
-      
+
       const success = server.upgrade(req, {
-        data: { userId }
+        data: { userId },
       });
-      
+
       if (success) {
         return undefined;
       }
-      
-      return new Response('WebSocket upgrade failed', { status: 500 });
+
+      return new Response("WebSocket upgrade failed", { status: 500 });
     }
-    
-    return new Response('Not found', { status: 404 });
+
+    return new Response("Not found", { status: 404 });
   },
-  
+
   websocket: {
+<<<<<<< HEAD
     open(ws: ServerWebSocket<WebSocketData>) {
       console.log('WebSocket connected:', ws.data.userId);
     },
@@ -44,6 +60,20 @@ const server = Bun.serve<WebSocketData>({
       console.log('WebSocket disconnected:', ws.data.userId);
     }
   }
+=======
+    open(ws) {
+      console.log("WebSocket connected:", ws.data.userId);
+    },
+
+    message(ws, message) {
+      console.log("Message from", ws.data.userId, ":", message);
+    },
+
+    close(ws) {
+      console.log("WebSocket disconnected:", ws.data.userId);
+    },
+  },
+>>>>>>> 1e221cab820f0727d41ee0a68bf0c7e35d76e8ae
 });
 
 console.log(`WebSocket server running on port ${server.port}`);
@@ -52,13 +82,17 @@ console.log(`WebSocket server running on port ${server.port}`);
 export function notifyUser(userId: string, notification: any) {
   // Bun's WebSocket doesn't expose active connections directly
   // In production, use a Map to track connections
-  console.log('Notify user:', userId, notification);
+  console.log("Notify user:", userId, notification);
 }
 
-export function notifyNearbyUsers(location: [number, number], radiusKm: number, notification: any) {
-  console.log('Notify nearby users:', location, radiusKm, notification);
+export function notifyNearbyUsers(
+  location: [number, number],
+  radiusKm: number,
+  notification: any,
+) {
+  console.log("Notify nearby users:", location, radiusKm, notification);
 }
 
 export function notifyAllUsers(notification: any) {
-  console.log('Notify all users:', notification);
+  console.log("Notify all users:", notification);
 }

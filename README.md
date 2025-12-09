@@ -1,248 +1,223 @@
-# SVATTT - Flood & Traffic Alert System
 
-Real-time flood and traffic alert system with sensor integration, automated zone creation, and user reporting.
+<p align="center">
+  <img src="docs/FORMS_logo.png" alt="FORMS Logo" width="600"/>
+</p>
 
-## Features
+<h1 align="center">
+  🚦 Flood and Outage Risk Management System 🌧️
+</h1>
 
-- 🗺️ Interactive map with VietMap integration
-- 📡 Real-time sensor data monitoring
-- 🌊 Automated flood zone detection
-- ⚡ Traffic outage alerts
-- 📊 Workflow automation editor
-- 📢 User report management
-- 🌤️ Weather integration
-- 🔄 WebSocket real-time updates
+<p align="center">
+  <img src="https://img.shields.io/badge/Competition-OLP__2025-blue?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/License-Apache__2.0-green?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Version-1.1.0-green?style=for-the-badge" />
+</p>
 
-## Tech Stack
+## Tính năng và Công nghệ
 
-- **Framework**: Next.js 16 + React 19
-- **Runtime**: Bun
-- **Database**: MongoDB
-- **Maps**: VietMap GL JS
-- **Styling**: Tailwind CSS
-- **Real-time**: WebSocket (WS)
-- **Automation**: ReactFlow
+### Tính năng chính
+- 🗺️ Bản đồ tương tác tích hợp VietMap  
+- 📡 Giám sát dữ liệu cảm biến theo thời gian thực  
+- 🌊 Phát hiện khu vực ngập tự động  
+- ⚡ Cảnh báo gián đoạn giao thông  
+- 📊 Trình chỉnh sửa workflow tự động  
+- 📢 Quản lý báo cáo người dùng  
+- 🌤️ Tích hợp dữ liệu thời tiết  
+- 🔄 Cập nhật dữ liệu theo thời gian thực qua WebSocket  
 
-## Prerequisites
+### Công nghệ sử dụng
+- **Framework**: Next.js 16 + React 19  
+- **Runtime**: Bun  
+- **Database**: MongoDB  
+- **Bản đồ**: VietMap GL JS  
+- **Giao diện**: Tailwind CSS  
+- **Realtime**: WebSocket (WS)  
+- **Tự động hóa**: ReactFlow  
 
-- Bun >= 1.0
-- MongoDB >= 7.0
-- VietMap API Key ([Get one here](https://maps.vietmap.vn/))
+## Yêu cầu hệ thống
+- **Bun** >= 1.0  
+- **MongoDB** >= 7.0  
+- **VietMap API Key** (lấy tại [VietMap Developer](https://maps.vietmap.vn/))  
 
-## Setup
+## Cài đặt
 
-1. **Clone the repository**
+1. **Clone repository**
 ```bash
 git clone <your-repo-url>
 cd svattt
 ```
 
-2. **Install dependencies**
+2. **Cài đặt dependencies**
 ```bash
 bun install
 ```
 
-3. **Configure environment variables**
+3. **Cấu hình biến môi trường**
 ```bash
 cp .env.example .env.local
 ```
 
-Edit `.env.local`:
+Chỉnh sửa `.env.local`:
 ```env
 MONGODB_URI=mongodb://localhost:27017/svattt
 NEXT_PUBLIC_VIETMAP_API_KEY=your_api_key_here
 PORT=3001
 ```
 
-4. **Start MongoDB**
+4. **Khởi động MongoDB**
 ```bash
-# If using Docker
+# Dùng Docker
 docker run -d -p 27017:27017 --name mongodb mongo:7
 
-# Or use your local MongoDB installation
+# Hoặc dùng MongoDB local
 mongod
 ```
 
-5. **Run development servers**
+5. **Chạy ứng dụng ở chế độ phát triển**
 
-Terminal 1 - WebSocket Server:
+**Terminal 1 – WebSocket Server:**
 ```bash
 bun run dev
 ```
 
-Terminal 2 - Next.js Dev Server:
+**Terminal 2 – Next.js Dev Server:**
 ```bash
 bun run dev:next
 ```
 
-6. **Access the application**
-- Frontend: http://localhost:3001
-- WebSocket: ws://localhost:3001/ws
+6. **Truy cập ứng dụng**
+- Frontend: http://localhost:3001  
+- WebSocket: ws://localhost:3001/ws  
 
-## Production Deployment
+## Triển khai Production
 
-### Option 1: Docker (Recommended)
-
+### Cách 1: Docker (Khuyến nghị)
 ```bash
-# Copy environment file
 cp .env.example .env
-
-# Edit .env with production values
 nano .env
-
-# Build and run with Docker Compose
 docker-compose up -d
-
-# View logs
 docker-compose logs -f app
 ```
 
-### Option 2: VPS with PM2
-
+### Cách 2: VPS với PM2
 ```bash
-# Install PM2
 npm install -g pm2
-
-# Copy environment file
 cp .env.example .env
-
-# Edit .env with production values
 nano .env
-
-# Install dependencies
 bun install
-
-# Build application
 bun run build
-
-# Start with PM2
 pm2 start ecosystem.config.js
-
-# Save PM2 process list
 pm2 save
-
-# Setup PM2 startup script
 pm2 startup
 ```
 
-**Automated deployment:**
+**Triển khai tự động:**
 ```bash
 chmod +x deploy.sh
 ./deploy.sh
 ```
 
-### Option 3: Manual VPS Setup
-
+### Cách 3: Triển khai thủ công trên VPS
 ```bash
-# Install Bun
 curl -fsSL https://bun.sh/install | bash
-
-# Clone and setup
 git clone <your-repo>
 cd svattt
 bun install
 bun run build
-
-# Start production server
 NODE_ENV=production bun run start
 ```
 
-## Environment Variables
+## Biến môi trường
 
-| Variable | Description | Required | Default |
-|----------|-------------|----------|---------|
-| `MONGODB_URI` | MongoDB connection string | Yes | - |
-| `NEXT_PUBLIC_VIETMAP_API_KEY` | VietMap API key | Yes | - |
-| `PORT` | Server port | No | 3001 |
-| `NODE_ENV` | Environment mode | No | development |
+| Biến | Mô tả | Bắt buộc | Mặc định |
+|------|--------|----------|----------|
+| `MONGODB_URI` | Chuỗi kết nối MongoDB | Có | - |
+| `NEXT_PUBLIC_VIETMAP_API_KEY` | API key VietMap | Có | - |
+| `PORT` | Cổng chạy server | Không | 3001 |
+| `NODE_ENV` | Chế độ môi trường | Không | development |
 
 ## API Endpoints
 
 ### Zones
-- `GET /api/zones` - Get all zones
-- `POST /api/zones` - Create new zone
-- `PUT /api/zones/[id]` - Update zone
-- `DELETE /api/zones/[id]` - Delete zone
+- `GET /api/zones` – Lấy danh sách zones  
+- `POST /api/zones` – Tạo zone mới  
+- `PUT /api/zones/[id]` – Cập nhật zone  
+- `DELETE /api/zones/[id]` – Xóa zone  
 
 ### Sensors
-- `GET /api/sensors` - Get all sensors
-- `POST /api/sensors` - Create sensor
-- `POST /api/sensor-data` - Submit sensor reading
-- `GET /api/sensor-data` - Get sensor history
+- `GET /api/sensors` – Lấy tất cả sensors  
+- `POST /api/sensors` – Tạo sensor  
+- `POST /api/sensor-data` – Gửi dữ liệu sensor  
+- `GET /api/sensor-data` – Lịch sử dữ liệu sensor  
 
 ### User Reports
-- `GET /api/user-reports` - Get all reports
-- `POST /api/user-reports` - Create report
-- `PUT /api/user-reports?id=xxx` - Update report status
-- `DELETE /api/user-reports?id=xxx` - Delete report
+- `GET /api/user-reports` – Lấy danh sách báo cáo  
+- `POST /api/user-reports` – Gửi báo cáo  
+- `PUT /api/user-reports?id=xxx` – Cập nhật trạng thái  
+- `DELETE /api/user-reports?id=xxx` – Xóa báo cáo  
 
 ### Automation
-- `GET /api/sensor-rules` - Get automation rules
-- `POST /api/sensor-rules` - Create rule
-- `PUT /api/sensor-rules?id=xxx` - Update rule
-- `DELETE /api/sensor-rules?id=xxx` - Delete rule
+- `GET /api/sensor-rules` – Lấy danh sách rule  
+- `POST /api/sensor-rules` – Tạo rule  
+- `PUT /api/sensor-rules?id=xxx` – Cập nhật rule  
+- `DELETE /api/sensor-rules?id=xxx` – Xóa rule  
 
-## Testing Sensor Data
+## Kiểm tra dữ liệu sensor
 
 ```bash
-# Get all sensors
 curl http://localhost:3001/api/sensors
 
-# Send sensor reading (triggers automation)
-curl -X POST http://localhost:3001/api/sensor-data \
-  -H "Content-Type: application/json" \
-  -d '{"sensorId":"sensor-123","value":10.5}'
+curl -X POST http://localhost:3001/api/sensor-data   -H "Content-Type: application/json"   -d '{"sensorId":"sensor-123","value":10.5}'
 ```
 
-## Project Structure
+## Cấu trúc dự án
 
 ```
 svattt/
-├── app/                    # Next.js app directory
+├── app/                    # Thư mục app của Next.js
 │   ├── api/               # API routes
-│   ├── page.tsx          # Main page
-│   └── layout.tsx        # Root layout
-├── components/            # React components
-│   └── Maps/             # Map-related components
-├── lib/                  # Utilities & libraries
-│   ├── db/              # Database models
-│   ├── automation/      # Rule engine
-│   └── websocket.ts     # WebSocket client
-├── server.ts            # Custom WebSocket server
-├── Dockerfile           # Docker configuration
-├── docker-compose.yml   # Docker Compose setup
-└── ecosystem.config.js  # PM2 configuration
+│   ├── page.tsx          # Trang chính
+│   └── layout.tsx        # Layout gốc
+├── components/            # Các component React
+│   └── Maps/             # Các component liên quan bản đồ
+├── lib/                   # Utilities và thư viện
+│   ├── db/               # Models database
+│   ├── automation/       # Rule engine
+│   └── websocket.ts      # WebSocket client
+├── server.ts             # WebSocket server tùy chỉnh
+├── Dockerfile            # Cấu hình Docker
+├── docker-compose.yml    # Docker Compose
+└── ecosystem.config.js   # Cấu hình PM2
 ```
 
-## Monitoring
+## Giám sát
 
-**PM2 Commands:**
+### Lệnh PM2:
 ```bash
-pm2 status              # Check app status
-pm2 logs svattt-app    # View logs
-pm2 restart svattt-app # Restart app
-pm2 stop svattt-app    # Stop app
-pm2 delete svattt-app  # Remove app
+pm2 status
+pm2 logs svattt-app
+pm2 restart svattt-app
+pm2 stop svattt-app
+pm2 delete svattt-app
 ```
 
-**Docker Commands:**
+### Lệnh Docker:
 ```bash
-docker-compose ps              # Check status
-docker-compose logs -f app     # View logs
-docker-compose restart app     # Restart
-docker-compose down            # Stop all
+docker-compose ps
+docker-compose logs -f app
+docker-compose restart app
+docker-compose down
 ```
 
 ## License
 
-Apache License 2.0 - See LICENSE file for details
+Apache License 2.0 – Xem file LICENSE để biết chi tiết.
 
-## Support
+## Hỗ trợ
 
-For issues or questions, please open a GitHub issue.
+Nếu có lỗi hoặc thắc mắc, vui lòng mở issue trên GitHub.
 
-## Deploy on Vercel
+## Triển khai lên Vercel
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Sử dụng nền tảng Vercel để triển khai Next.js dễ dàng hơn.  
+Xem thêm tài liệu triển khai Next.js để biết chi tiết.

@@ -1,12 +1,28 @@
-'use client';
+/*
+ * Copyright 2025 PKA-OpenLD
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
-import { useState, useEffect } from 'react';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faClock, faTimes } from '@fortawesome/free-solid-svg-icons';
+"use client";
+
+import { useState, useEffect } from "react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faClock, faTimes } from "@fortawesome/free-solid-svg-icons";
 
 interface Activity {
   id: string;
-  type: 'report' | 'zone' | 'vote' | 'user';
+  type: "report" | "zone" | "vote" | "user";
   action: string;
   description: string;
   timestamp: Date;
@@ -29,13 +45,13 @@ export default function ActivityFeed() {
 
   const fetchActivities = async () => {
     try {
-      const response = await fetch('/api/activities');
+      const response = await fetch("/api/activities");
       const data = await response.json();
       if (data.activities) {
         setActivities(data.activities);
       }
     } catch (error) {
-      console.error('Failed to fetch activities:', error);
+      console.error("Failed to fetch activities:", error);
     }
   };
 
@@ -46,7 +62,7 @@ export default function ActivityFeed() {
     const hours = Math.floor(diff / 3600000);
     const days = Math.floor(diff / 86400000);
 
-    if (minutes < 1) return 'Vừa xong';
+    if (minutes < 1) return "Vừa xong";
     if (minutes < 60) return `${minutes} phút trước`;
     if (hours < 24) return `${hours} giờ trước`;
     return `${days} ngày trước`;
@@ -62,7 +78,7 @@ export default function ActivityFeed() {
         <FontAwesomeIcon icon={faClock} size="lg" />
         {activities.length > 0 && (
           <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center animate-pulse">
-            {activities.length > 9 ? '9+' : activities.length}
+            {activities.length > 9 ? "9+" : activities.length}
           </span>
         )}
       </button>
@@ -76,7 +92,7 @@ export default function ActivityFeed() {
           <FontAwesomeIcon icon={faClock} />
           Hoạt động gần đây
         </h3>
-        <button 
+        <button
           onClick={() => setIsOpen(false)}
           className="hover:bg-white/20 p-2 rounded-lg transition-colors"
         >
@@ -87,7 +103,10 @@ export default function ActivityFeed() {
       <div className="flex-1 overflow-y-auto p-4">
         {activities.length === 0 ? (
           <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-            <FontAwesomeIcon icon={faClock} className="text-4xl mb-3 opacity-50" />
+            <FontAwesomeIcon
+              icon={faClock}
+              className="text-4xl mb-3 opacity-50"
+            />
             <p>Chưa có hoạt động nào</p>
           </div>
         ) : (

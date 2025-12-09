@@ -10,6 +10,21 @@ THIRD-PARTY SOFTWARE NOTICES
 This software utilizes several open-source libraries and frameworks.
 Below are the attribution notices for these third-party software components.
 
++-------------------------------------------------------------------------------+
+| Component         | License      | Copyright                               |
++-------------------------------------------------------------------------------+
+| Next.js           | MIT          | Copyright (c) 2025 Vercel, Inc.         |
+| React & React DOM | MIT          | Copyright (c) Meta Platforms, Inc.      |
+| Bun               | MIT          | Copyright (c) 2025 Oven-sh              |
+| Tailwind CSS      | MIT          | Copyright (c) Tailwind Labs, Inc.       |
+| Open-Meteo API    | CC BY 4.0    | Copyright (c) Open-Meteo.com            |
+| VietMap GL JS     | BSD-3-Clause | Copyright (c) 2025 Vietmap App Co., Ltd |
+| MapLibre GL JS    | BSD-3-Clause | Copyright (c) 2023 MapLibre contributors|
+| Mapbox GL JS v1.13| BSD-3-Clause | Copyright (c) 2020 Mapbox               |
+| glfx.js           | MIT          | Copyright (C) 2011 Evan Wallace          |
+| d3-color          | BSD-3-Clause | Copyright 2010-2016 Mike Bostock        |
++-------------------------------------------------------------------------------+
+
 ================================================================================
 1. Next.js, React, Bun, Tailwind CSS
 ================================================================================
@@ -39,7 +54,28 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-2. VietMap GL JS (Based on MapLibre GL JS & Mapbox GL JS)
+2. Open-Meteo Weather API
+================================================================================
+This product uses weather data from Open-Meteo API:
+
+* Open-Meteo - https://open-meteo.com/
+
+Open-Meteo weather data is licensed under Attribution 4.0 International 
+(CC BY 4.0).
+
+You are free to:
+- Share: copy and redistribute the material in any medium or format
+- Adapt: remix, transform, and build upon the material for any purpose
+
+Under the following terms:
+- Attribution: You must give appropriate credit, provide a link to the 
+  license, and indicate if changes were made.
+
+License: https://creativecommons.org/licenses/by/4.0/
+API Documentation: https://open-meteo.com/en/docs
+
+================================================================================
+3. VietMap GL JS (Based on MapLibre GL JS & Mapbox GL JS)
 ================================================================================
 The following license applies to the VietMap GL JS library included/used in this project:
 
