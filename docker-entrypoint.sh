@@ -14,5 +14,8 @@ echo "✅ MongoDB ready and admin user seeded!"
 echo ""
 
 # Start the application
-echo "🌐 Starting server..."
-exec bun run start:next --port 3002 & bun run server.ts
+echo "🌐 Starting Next.js on port 3002..."
+bun run start:next --port 3002 &
+
+echo "🔌 Starting WebSocket server on port 3001..."
+exec bun run websocket-server.ts
