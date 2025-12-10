@@ -87,6 +87,8 @@ export default function AdminPage() {
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
   const [zoneSortBy, setZoneSortBy] = useState<'recent' | 'nearest'>('recent');
   const [reportSortBy, setReportSortBy] = useState<'recent' | 'nearest'>('recent');
+  const [sensors, setSensors] = useState<any[]>([]);
+  const [sensorData, setSensorData] = useState<Map<string, any>>(new Map());
 
   useEffect(() => {
     getCurrentLocation().then(location => {
@@ -101,26 +103,40 @@ export default function AdminPage() {
 
   const fetchData = async () => {
     try {
-      const [zonesRes, reportsRes, usersRes] = await Promise.all([
+      const [zonesRes, reportsRes, usersRes, sensorsRes, sensorDataRes] = await Promise.all([
         fetch('/api/zones'),
         fetch('/api/user-reports'),
-        fetch('/api/users')
+        fetch('/api/users'),
+        fetch('/api/sensors'),
+        fetch('/api/sensor-data?limit=100')
       ]);
       
       const zonesData = await zonesRes.json();
       const reportsData = await reportsRes.json();
       const usersData = await usersRes.json();
+      const sensorsDataJson = await sensorsRes.json();
+      const sensorDataJson = await sensorDataRes.json();
       
       setZones(zonesData.zones || []);
       setReports(reportsData.reports || []);
       setUsers(usersData.users || []);
+      setSensors(sensorsDataJson.sensors || []);
+      
+      // Map latest sensor readings by sensorId
+      const latestReadings = new Map();
+      (sensorDataJson.data || []).forEach((reading: any) => {
+        if (!latestReadings.has(reading.sensorId) || reading.timestamp > latestReadings.get(reading.sensorId).timestamp) {
+          latestReadings.set(reading.sensorId, reading);
+        }
+      });
+      setSensorData(latestReadings);
       
       const pendingReports = reportsData.reports?.filter((r: Report) => r.status === 'new').length || 0;
       
       setStats({
         totalZones: zonesData.zones?.length || 0,
         totalReports: reportsData.reports?.length || 0,
-        totalSensors: 0,
+        totalSensors: sensorsDataJson.sensors?.length || 0,
         activeAlerts: zonesData.zones?.filter((z: Zone) => (z.riskLevel || 0) > 7).length || 0,
         pendingReports
       });
@@ -494,6 +510,103 @@ export default function AdminPage() {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Sensor Status Table */}
+        <div className="bg-gray-800 rounded-2xl shadow-xl overflow-hidden mb-8">
+          <div className="bg-gradient-to-r from-green-600 to-emerald-600 px-6 py-4">
+            <h2 className="text-2xl font-bold text-white flex items-center gap-3">
+              <span className="text-2xl">📡</span>
+              Trạng Thái Cảm Biến ({stats.totalSensors})
+            </h2>
+          </div>
+          <div className="p-6 overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-gray-700">
+                  <th className="pb-3 text-gray-400 font-semibold">Tên</th>
+                  <th className="pb-3 text-gray-400 font-semibold">Loại</th>
+                  <th className="pb-3 text-gray-400 font-semibold">Ngưỡng</th>
+                  <th className="pb-3 text-gray-400 font-semibold">Giá Trị Hiện Tại</th>
+                  <th className="pb-3 text-gray-400 font-semibold">Trạng Thái</th>
+                  <th className="pb-3 text-gray-400 font-semibold">Cập Nhật</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr>
+                    <td colSpan={6} className="text-center py-12 text-gray-400">
+                      Đang tải...
+                    </td>
+                  </tr>
+                ) : sensors.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="text-center py-12 text-gray-400">
+                      Chưa có cảm biến nào
+                    </td>
+                  </tr>
+                ) : (
+                  sensors.map((sensor) => {
+                    const reading = sensorData.get(sensor.id);
+                    const value = reading?.waterLevel ?? reading?.temperature ?? reading?.humidity;
+                    const isAboveThreshold = value !== undefined && value > sensor.threshold;
+                    const timeSinceUpdate = reading ? Date.now() - reading.timestamp : null;
+                    const isStale = timeSinceUpdate === null || timeSinceUpdate > 300000; // 5 minutes
+                    
+                    return (
+                      <tr key={sensor.id} className="border-b border-gray-700 hover:bg-gray-750">
+                        <td className="py-3 text-white font-medium">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">
+                              {sensor.type === 'water_level' ? '💧' : sensor.type === 'temperature' ? '🌡️' : '💨'}
+                            </span>
+                            {sensor.name}
+                          </div>
+                        </td>
+                        <td className="py-3 text-gray-300">
+                          {sensor.type === 'water_level' ? 'Mực nước' : sensor.type === 'temperature' ? 'Nhiệt độ' : 'Độ ẩm'}
+                        </td>
+                        <td className="py-3 text-gray-300">
+                          {sensor.threshold} {sensor.type === 'water_level' ? 'm' : sensor.type === 'temperature' ? '°C' : '%'}
+                        </td>
+                        <td className="py-3">
+                          {value !== undefined ? (
+                            <span className={`font-bold ${isAboveThreshold ? 'text-red-400' : 'text-green-400'}`}>
+                              {value.toFixed(2)} {sensor.type === 'water_level' ? 'm' : sensor.type === 'temperature' ? '°C' : '%'}
+                            </span>
+                          ) : (
+                            <span className="text-gray-500">--</span>
+                          )}
+                        </td>
+                        <td className="py-3">
+                          {isStale ? (
+                            <span className="px-3 py-1 rounded-full text-xs font-bold bg-gray-600 text-gray-300">
+                              ⚫ Không hoạt động
+                            </span>
+                          ) : isAboveThreshold ? (
+                            <span className="px-3 py-1 rounded-full text-xs font-bold bg-red-500 text-white">
+                              🚨 Vượt ngưỡng
+                            </span>
+                          ) : (
+                            <span className="px-3 py-1 rounded-full text-xs font-bold bg-green-500 text-white">
+                              ✅ Bình thường
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 text-gray-400 text-sm">
+                          {reading ? (
+                            new Date(reading.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+                          ) : (
+                            '--:--'
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
 

@@ -138,46 +138,96 @@ async function createAutomatedZone(
       return existingZone.id;
     }
 
-    const zoneId = `auto-zone-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-    let newZone: any = {
-      id: zoneId,
-      type: rule.actionType,
-      shape: rule.actionShape,
-      title: `Tự Động: ${rule.name}`,
-      description: `Được tạo tự động từ cảm biến ${reading.sensorName} (giá trị: ${reading.value})`,
-      riskLevel: 80,
-      createdAt: Date.now(),
-      automatedFrom: rule.id,
-      triggeredBy: reading.sensorId,
-    };
+    const createdZoneIds: string[] = [];
 
     if (rule.actionShape === "circle") {
-      // Use sensor location as center with default radius
-      const sensors = await getAllSensors();
-      const sensor = sensors.find((s: Sensor) => s.id === reading.sensorId);
-
-      if (sensor && sensor.location) {
-        newZone.center = sensor.location;
-        newZone.radius = rule.actionRadius || 500; // 500m default
+      // Check if we have multiple points (AND gate)
+      const points = rule.metadata?.points as [number, number][] | undefined;
+      
+      if (points && points.length > 0) {
+        // AND gate: Create zones at ALL specified points
+        console.log(`🔘 AND gate activated: Creating ${points.length} zones`);
+        
+        for (let i = 0; i < points.length; i++) {
+          const point = points[i];
+          const zoneId = `auto-zone-${Date.now()}-${i}-${Math.random().toString(36).substr(2, 9)}`;
+          
+          const newZone: any = {
+            id: zoneId,
+            type: rule.actionType,
+            shape: "circle",
+            title: `Tự Động: ${rule.name} (${i + 1}/${points.length})`,
+            description: `Được tạo tự động từ cảm biến ${reading.sensorName} (giá trị: ${reading.value}) - AND gate điểm ${i + 1}`,
+            riskLevel: 80,
+            createdAt: Date.now(),
+            automatedFrom: rule.id,
+            triggeredBy: reading.sensorId,
+            center: point,
+            radius: rule.actionRadius || 500,
+          };
+          
+          await createZone(newZone);
+          createdZoneIds.push(zoneId);
+          console.log(`✅ Created AND gate zone ${i + 1}/${points.length}: ${zoneId}`);
+        }
+        
+        return createdZoneIds[0]; // Return first zone ID
       } else {
-        console.warn("Cannot create circle zone without sensor location");
-        return null;
+        // Single zone at sensor location
+        const sensors = await getAllSensors();
+        const sensor = sensors.find((s: Sensor) => s.id === reading.sensorId);
+
+        if (sensor && sensor.location) {
+          const zoneId = `auto-zone-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+          const newZone: any = {
+            id: zoneId,
+            type: rule.actionType,
+            shape: "circle",
+            title: `Tự Động: ${rule.name}`,
+            description: `Được tạo tự động từ cảm biến ${reading.sensorName} (giá trị: ${reading.value})`,
+            riskLevel: 80,
+            createdAt: Date.now(),
+            automatedFrom: rule.id,
+            triggeredBy: reading.sensorId,
+            center: sensor.location,
+            radius: rule.actionRadius || 500,
+          };
+          
+          await createZone(newZone);
+          console.log(`✅ Created automated zone: ${zoneId} from rule: ${rule.name}`);
+          return zoneId;
+        } else {
+          console.warn("Cannot create circle zone without sensor location");
+          return null;
+        }
       }
     } else if (rule.actionShape === "line") {
       // Use points from rule metadata if available
       if (rule.metadata?.points && rule.metadata.points.length >= 2) {
-        newZone.coordinates = rule.metadata.points;
+        const zoneId = `auto-zone-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const newZone: any = {
+          id: zoneId,
+          type: rule.actionType,
+          shape: "line",
+          title: `Tự Động: ${rule.name}`,
+          description: `Được tạo tự động từ cảm biến ${reading.sensorName} (giá trị: ${reading.value})`,
+          riskLevel: 80,
+          createdAt: Date.now(),
+          automatedFrom: rule.id,
+          triggeredBy: reading.sensorId,
+          coordinates: rule.metadata.points,
+        };
+        
+        await createZone(newZone);
+        console.log(`✅ Created automated zone: ${zoneId} from rule: ${rule.name}`);
+        return zoneId;
       } else {
         console.warn("Cannot create line zone without points");
         return null;
       }
     }
 
-    await createZone(newZone);
-
-    console.log(`✅ Created automated zone: ${zoneId} from rule: ${rule.name}`);
-    return zoneId;
+    return null;
   } catch (error) {
     console.error("Failed to create automated zone:", error);
     return null;

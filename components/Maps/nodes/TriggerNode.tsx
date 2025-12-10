@@ -25,7 +25,7 @@ interface TriggerNodeData {
   actionType: "flood" | "outage";
   actionShape: "circle" | "line";
   label: string;
-  points?: [number, number][];
+  points?: [number, number][]; // Multiple points for AND gate (activate all)
   onEdit?: (id: string, data: TriggerNodeData) => void;
 }
 
@@ -77,9 +77,18 @@ function TriggerNode({ id, data }: NodeProps) {
           </div>
           {nodeData.points && nodeData.points.length > 0 && (
             <div className="text-xs mt-1">
-              <div className="font-semibold">Điểm: {nodeData.points.length}/2</div>
-              {nodeData.points.length === 2 && (
+              <div className="font-semibold">
+                {nodeData.actionShape === 'line' ? (
+                  <>Điểm: {nodeData.points.length}/2 (đường thẳng)</>
+                ) : (
+                  <>🔘 {nodeData.points.length} điểm (AND gate)</>
+                )}
+              </div>
+              {nodeData.actionShape === 'line' && nodeData.points.length === 2 && (
                 <div className="text-green-300">✓ Đã cấu hình đường</div>
+              )}
+              {nodeData.actionShape === 'circle' && nodeData.points.length > 0 && (
+                <div className="text-green-300">✓ Kích hoạt TẤT CẢ điểm</div>
               )}
             </div>
           )}
