@@ -56,6 +56,7 @@ export default function RoutePanel({ map, zones, onMapClick }: RoutePanelProps) 
   const [isOpen, setIsOpen] = useState(false);
   const [origin, setOrigin] = useState<[number, number] | null>(null);
   const [destination, setDestination] = useState<[number, number] | null>(null);
+  const [destinationName, setDestinationName] = useState<string>('');
   const [isSelectingOrigin, setIsSelectingOrigin] = useState(false);
   const [isSelectingDestination, setIsSelectingDestination] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -64,6 +65,27 @@ export default function RoutePanel({ map, zones, onMapClick }: RoutePanelProps) 
   const [avoidFloodZones, setAvoidFloodZones] = useState(true);
   const [isEvacuationMode, setIsEvacuationMode] = useState(false);
   const [nearestSafeZone, setNearestSafeZone] = useState<any>(null);
+
+  // Listen for navigation requests from search popup
+  useEffect(() => {
+    const handleOpenRoute = (e: CustomEvent) => {
+      const { destination: dest, destinationName: name } = e.detail;
+      setDestination(dest);
+      setDestinationName(name);
+      setIsOpen(true);
+      showToast('Điểm đến đã được chọn. Vui lòng chọn điểm xuất phát.', 'success');
+      
+      // Add destination marker
+      if (map) {
+        new vietmapgl.Marker({ color: '#ef4444' })
+          .setLngLat(dest)
+          .addTo(map);
+      }
+    };
+
+    window.addEventListener('openRoutePanel', handleOpenRoute as EventListener);
+    return () => window.removeEventListener('openRoutePanel', handleOpenRoute as EventListener);
+  }, [map, showToast]);
 
   const decodePolyline = (encoded: string): number[][] => {
     const points: number[][] = [];
@@ -503,7 +525,11 @@ export default function RoutePanel({ map, zones, onMapClick }: RoutePanelProps) 
                 : 'border-gray-200 hover:border-red-500 text-gray-500'
             }`}
           >
-            {destination ? `${destination[1].toFixed(5)}, ${destination[0].toFixed(5)}` : 'Nhấn để chọn trên bản đồ'}
+            {destination 
+              ? destinationName 
+                ? <span className="font-medium">{destinationName}</span>
+                : `${destination[1].toFixed(5)}, ${destination[0].toFixed(5)}`
+              : 'Nhấn để chọn trên bản đồ'}
           </button>
         </div>
 

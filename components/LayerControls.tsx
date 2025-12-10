@@ -30,6 +30,7 @@ import {
   faRoad,
   faFire,
   faClock,
+  faRobot,
 } from "@fortawesome/free-solid-svg-icons";
 
 interface LayerControlsProps {
@@ -51,6 +52,7 @@ export default function LayerControls({
     safeZones: true,
     routes: true,
     heatmap: false,
+    aiTraffic: true,
   });
 
   const handleToggle = (layer: keyof typeof layers) => {
@@ -101,6 +103,13 @@ export default function LayerControls({
       icon: faFire,
       color: "bg-gradient-to-r from-yellow-400 to-red-600",
       iconColor: "text-red-600",
+    },
+    {
+      key: "aiTraffic" as const,
+      label: "AI Giao Thông",
+      icon: faRobot,
+      color: "bg-indigo-500",
+      iconColor: "text-indigo-500",
     },
   ];
 

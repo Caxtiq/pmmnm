@@ -23,6 +23,7 @@ export const COLLECTIONS = {
   PREDICTIONS: "predictions",
   USER_REPORTS: "user_reports",
   USERS: "users",
+  AI_TRAFFIC_ANALYSIS: "ai_traffic_analysis",
 };
 
 // Initialize database indexes

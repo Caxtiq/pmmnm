@@ -33,6 +33,7 @@ import {
 import vietmapgl from '@vietmap/vietmap-gl-js/dist/vietmap-gl.js';
 import ShareButton from '../ShareButton';
 import { useToast } from '../ToastProvider';
+import { getCurrentLocation, getDistanceFromUser, formatDistance, sortByDistance } from '@/lib/geoUtils';
 
 interface RSSItem {
   title: string;
@@ -72,7 +73,9 @@ export default function CommunityFeed({ userId, map, onReportClick }: CommunityF
   const [reports, setReports] = useState<UserReport[]>([]);
   const [filteredReports, setFilteredReports] = useState<UserReport[]>([]);
   const [filterType, setFilterType] = useState<'all' | 'flood' | 'outage' | 'other'>('all');
-  const [sortBy, setSortBy] = useState<'recent' | 'popular'>('recent');
+  const [sortBy, setSortBy] = useState<'recent' | 'popular' | 'nearest'>('recent');
+  const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
+  const [reportDistances, setReportDistances] = useState<Map<string, number>>(new Map());
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
@@ -90,6 +93,13 @@ export default function CommunityFeed({ userId, map, onReportClick }: CommunityF
         }
       })
       .catch(err => console.error('Failed to get user:', err));
+
+    // Get user's location for distance sorting
+    getCurrentLocation().then(location => {
+      if (location) {
+        setUserLocation(location);
+      }
+    });
 
     fetchReports();
     fetchNews();
@@ -112,12 +122,23 @@ export default function CommunityFeed({ userId, map, onReportClick }: CommunityF
     // Sort
     if (sortBy === 'popular') {
       filtered = [...filtered].sort((a, b) => (b.voteScore || 0) - (a.voteScore || 0));
+    } else if (sortBy === 'nearest') {
+      filtered = sortByDistance(filtered, userLocation);
+      // Calculate and store distances
+      const distances = new Map<string, number>();
+      filtered.forEach(report => {
+        const distance = getDistanceFromUser(userLocation, report.location);
+        if (distance !== null) {
+          distances.set(report.id, distance);
+        }
+      });
+      setReportDistances(distances);
     } else {
       filtered = [...filtered].sort((a, b) => b.createdAt - a.createdAt);
     }
 
     setFilteredReports(filtered);
-  }, [reports, filterType, sortBy]);
+  }, [reports, filterType, sortBy, userLocation]);
 
   const fetchReports = async () => {
     try {
@@ -405,27 +426,39 @@ export default function CommunityFeed({ userId, map, onReportClick }: CommunityF
           <div className="flex-1 flex flex-col animate-fadeIn">
         {/* Filters */}
         <div className="p-4 border-b border-gray-100 space-y-3">
-          <div className="flex gap-2">
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              onClick={() => setSortBy('nearest')}
+              className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                sortBy === 'nearest'
+                  ? 'bg-purple-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+              title={userLocation ? 'Sắp xếp theo khoảng cách' : 'Cần quyền truy cập vị trí'}
+            >
+              <FontAwesomeIcon icon={faMapMarkerAlt} className="mr-1" />
+              Gần nhất
+            </button>
             <button
               onClick={() => setSortBy('recent')}
-              className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+              className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
                 sortBy === 'recent'
                   ? 'bg-purple-600 text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
-              <FontAwesomeIcon icon={faSortAmountDown} className="mr-2" />
+              <FontAwesomeIcon icon={faSortAmountDown} className="mr-1" />
               Mới nhất
             </button>
             <button
               onClick={() => setSortBy('popular')}
-              className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+              className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
                 sortBy === 'popular'
                   ? 'bg-purple-600 text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
-              <FontAwesomeIcon icon={faThumbsUp} className="mr-2" />
+              <FontAwesomeIcon icon={faThumbsUp} className="mr-1" />
               Phổ biến
             </button>
           </div>
@@ -478,6 +511,12 @@ export default function CommunityFeed({ userId, map, onReportClick }: CommunityF
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      {sortBy === 'nearest' && reportDistances.has(report.id) && (
+                        <span className="px-2 py-1 rounded-lg text-xs font-bold bg-blue-100 text-blue-700">
+                          <FontAwesomeIcon icon={faMapMarkerAlt} className="mr-1" />
+                          {formatDistance(reportDistances.get(report.id)!)}
+                        </span>
+                      )}
                       {report.coordinates && report.coordinates.length > 1 && (
                         <span className="px-2 py-1 rounded-lg text-xs font-bold bg-purple-100 text-purple-700">
                           🗺️ Tuyến đường

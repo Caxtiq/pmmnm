@@ -26,8 +26,10 @@ import RoutePanel from './RoutePanel';
 import AICrawlerButton from './AICrawlerButton';
 import CommunityFeed from './CommunityFeed';
 import LayerControls from '../LayerControls';
+import PredictionPanel from '../PredictionPanel';
+import AITrafficAlerts from '../AITrafficAlerts';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faMap, faCloudSun } from '@fortawesome/free-solid-svg-icons';
+import { faMap, faCloudSun, faChartLine, faBrain } from '@fortawesome/free-solid-svg-icons';
 
 interface Zone {
     id: string;
@@ -95,8 +97,12 @@ export default function Maps({ isAdmin = false }: MapsProps) {
         safeZones: true,
         routes: true,
         heatmap: false,
+        aiTraffic: true,
     });
     const [heatmapTimeFilter, setHeatmapTimeFilter] = useState<'24h' | '7d' | '30d' | 'all'>('7d');
+    const [showPredictions, setShowPredictions] = useState(false);
+    const [showAIAlerts, setShowAIAlerts] = useState(false);
+    const [aiTrafficIssues, setAiTrafficIssues] = useState<any[]>([]);
 
     useEffect(() => {
         setIsMounted(true);
@@ -113,6 +119,7 @@ export default function Maps({ isAdmin = false }: MapsProps) {
             safeZones: ['safe-zones-circle', 'safe-zones-pulse', 'safe-zones-label'],
             routes: ['zones-lines', 'route-line', 'route-outline'],
             heatmap: ['heatmap-layer'],
+            aiTraffic: ['ai-traffic-markers', 'ai-traffic-labels'],
         };
 
         const layers = layerMap[layer] || [];
@@ -210,7 +217,7 @@ export default function Maps({ isAdmin = false }: MapsProps) {
         });
     }, [map]);
 
-    // Load zones, sensors, and user reports from database on mount
+    // Load zones, sensors, user reports, and AI traffic from database on mount
     useEffect(() => {
         fetchZones();
         
@@ -222,6 +229,18 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                 }
             })
             .catch(err => console.error('Failed to load user reports:', err));
+        
+        // Fetch AI traffic analysis (uses cache if available)
+        fetch('/api/traffic-analysis')
+            .then(res => res.json())
+            .then(data => {
+                if (data.success && data.issues) {
+                    setAiTrafficIssues(data.issues.filter((issue: any) => 
+                        issue.coordinates && issue.coordinates.length > 0
+                    ));
+                }
+            })
+            .catch(err => console.error('Failed to load AI traffic:', err));
         
         if (isAdmin) {
             fetch('/api/sensors')
@@ -318,6 +337,29 @@ export default function Maps({ isAdmin = false }: MapsProps) {
         }
     }, [userReports, heatmapTimeFilter, map]);
 
+    // Update AI traffic layer when issues change
+    useEffect(() => {
+        if (!map || !map.getSource('ai-traffic')) return;
+        
+        const source = map.getSource('ai-traffic') as any;
+        source.setData({
+            type: 'FeatureCollection',
+            features: aiTrafficIssues.map(issue => ({
+                type: 'Feature',
+                geometry: {
+                    type: 'Point',
+                    coordinates: issue.coordinates[0]
+                },
+                properties: {
+                    type: issue.type,
+                    location: issue.fullLocation,
+                    description: issue.description,
+                    severity: issue.severity
+                }
+            }))
+        });
+    }, [aiTrafficIssues, map]);
+
     useEffect(() => {
         if (!isMounted || !mapContainerRef.current || map) return;
 
@@ -327,16 +369,7 @@ export default function Maps({ isAdmin = false }: MapsProps) {
             container: mapContainerRef.current,
             style: `https://maps.vietmap.vn/maps/styles/tm/style.json?apikey=${apiKey}`,
             center: [105.748684, 20.962594], // Hanoi coordinates
-            
             zoom: 12,
-            transformRequest: (url: string) => {
-                if (url.includes('vietmap.vn')) {
-                    return {
-                        url: url.includes('?') ? `${url}&apikey=${apiKey}` : `${url}?apikey=${apiKey}`
-                    };
-                }
-                return { url };
-            }
         });
 
         mapInstance.addControl(new vietmapgl.NavigationControl(), 'top-right');
@@ -643,6 +676,50 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                     'text-color': '#000000',
                     'text-halo-color': '#ffffff',
                     'text-halo-width': 2
+                }
+            });
+
+            // Add AI Traffic Issues source
+            mapInstance.addSource('ai-traffic', {
+                type: 'geojson',
+                data: {
+                    type: 'FeatureCollection',
+                    features: []
+                }
+            });
+
+            // Add AI traffic markers
+            mapInstance.addLayer({
+                id: 'ai-traffic-markers',
+                type: 'circle',
+                source: 'ai-traffic',
+                paint: {
+                    'circle-radius': 14,
+                    'circle-color': [
+                        'match',
+                        ['get', 'type'],
+                        'flood', '#3b82f6',
+                        'accident', '#ef4444',
+                        'congestion', '#f97316',
+                        'construction', '#eab308',
+                        '#8b5cf6'
+                    ],
+                    'circle-stroke-width': 3,
+                    'circle-stroke-color': '#ffffff',
+                    'circle-opacity': 0.9
+                }
+            });
+
+            // Add AI traffic labels
+            mapInstance.addLayer({
+                id: 'ai-traffic-labels',
+                type: 'symbol',
+                source: 'ai-traffic',
+                layout: {
+                    'text-field': '🤖',
+                    'text-size': 16,
+                    'text-anchor': 'center',
+                    'text-allow-overlap': true
                 }
             });
 
@@ -1305,25 +1382,69 @@ export default function Maps({ isAdmin = false }: MapsProps) {
             const data = await response.json();
             
             if (data && data.lat && data.lng) {
+                const coords: [number, number] = [data.lng, data.lat];
+                
                 // Smooth animated transition to location
                 map?.flyTo({
-                    center: [data.lng, data.lat],
+                    center: coords,
                     zoom: 16,
-                    duration: 2500, // Increased duration for smoother feel
-                    essential: true, // Animation will complete even if user interacts
-                    easing: (t) => t * (2 - t) // Ease-out quadratic for smooth deceleration
+                    duration: 2500,
+                    essential: true,
+                    easing: (t) => t * (2 - t)
                 });
                 
-                // Add a temporary marker with animation
+                // Create popup content with navigation button
+                const popupContent = document.createElement('div');
+                popupContent.className = 'p-3 min-w-[250px]';
+                popupContent.innerHTML = `
+                    <div class="mb-3">
+                        <div class="flex items-center gap-2 mb-2">
+                            <svg class="w-4 h-4 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/>
+                            </svg>
+                            <strong class="text-gray-800">${display}</strong>
+                        </div>
+                        <p class="text-xs text-gray-500">${data.address || ''}</p>
+                    </div>
+                    <button id="navigate-btn" class="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold py-2.5 px-4 rounded-lg transition-all duration-200 flex items-center justify-center gap-2 shadow-md hover:shadow-lg">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/>
+                        </svg>
+                        <span>Chỉ Đường Đến Đây</span>
+                    </button>
+                `;
+                
+                // Add event listener to navigation button
+                const navigateBtn = popupContent.querySelector('#navigate-btn');
+                if (navigateBtn) {
+                    navigateBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        // Trigger route panel with this location as destination
+                        const event = new CustomEvent('openRoutePanel', { 
+                            detail: { 
+                                destination: coords,
+                                destinationName: display 
+                            } 
+                        });
+                        window.dispatchEvent(event);
+                    });
+                }
+                
+                // Add marker with popup
                 const marker = new vietmapgl.Marker({ color: '#3b82f6' })
-                    .setLngLat([data.lng, data.lat])
+                    .setLngLat(coords)
                     .setPopup(
-                        new vietmapgl.Popup({ offset: 25, closeButton: true, closeOnClick: false })
-                            .setHTML(`<div class="p-2"><strong>${display}</strong></div>`)
+                        new vietmapgl.Popup({ 
+                            offset: 25, 
+                            closeButton: true, 
+                            closeOnClick: false,
+                            maxWidth: '300px'
+                        })
+                        .setDOMContent(popupContent)
                     )
                     .addTo(map!);
                 
-                // Open popup after a brief delay for better UX
+                // Open popup after animation
                 setTimeout(() => {
                     marker.togglePopup();
                 }, 2600);
@@ -1513,7 +1634,131 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                         <FontAwesomeIcon icon={faCloudSun} className="mr-2" />
                         Thời Tiết
                     </button>
+                    <button
+                        onClick={() => setShowPredictions(!showPredictions)}
+                        className={`px-4 py-2 rounded-lg font-semibold transition-all shadow-lg ${
+                            showPredictions
+                                ? 'bg-indigo-600 text-white'
+                                : 'bg-white text-gray-700 hover:bg-gray-100'
+                        }`}
+                        title="Dự đoán mật độ"
+                    >
+                        <FontAwesomeIcon icon={faChartLine} className="mr-2" />
+                        Dự Đoán
+                    </button>
+                    <button
+                        onClick={() => setShowAIAlerts(!showAIAlerts)}
+                        className={`px-4 py-2 rounded-lg font-semibold transition-all shadow-lg ${
+                            showAIAlerts
+                                ? 'bg-purple-600 text-white'
+                                : 'bg-white text-gray-700 hover:bg-gray-100'
+                        }`}
+                        title="AI phân tích tin tức"
+                    >
+                        <FontAwesomeIcon icon={faBrain} className="mr-2" />
+                        AI Tin Tức
+                    </button>
                 </div>
+            )}
+
+            {/* Prediction Panel - Only for non-admin users */}
+            {!isAdmin && showPredictions && (
+                <PredictionPanel
+                    onPredictionClick={(location) => {
+                        if (map) {
+                            map.flyTo({
+                                center: location,
+                                zoom: 14,
+                                duration: 2000,
+                                essential: true
+                            });
+                        }
+                    }}
+                    onClose={() => setShowPredictions(false)}
+                />
+            )}
+
+            {/* AI Traffic Alerts - Only for non-admin users */}
+            {!isAdmin && showAIAlerts && (
+                <AITrafficAlerts
+                    onIssueClick={async (issue) => {
+                        if (!map) return;
+                        
+                        try {
+                            const apiKey = process.env.NEXT_PUBLIC_VIETMAP_API_KEY;
+                            
+                            // Search for the location using autocomplete API
+                            const searchQuery = encodeURIComponent(issue.location + ', Hà Nội, Vietnam');
+                            const searchResponse = await fetch(
+                                `https://maps.vietmap.vn/api/autocomplete/v4?apikey=${apiKey}&text=${searchQuery}&display_type=1`
+                            );
+                            
+                            if (!searchResponse.ok) {
+                                console.error('Search failed:', searchResponse.status);
+                                return;
+                            }
+                            
+                            const searchData = await searchResponse.json();
+                            
+                            if (!searchData || searchData.length === 0) {
+                                console.log('No location found for:', issue.location);
+                                return;
+                            }
+                            
+                            // Get the first result's ref_id
+                            const firstResult = searchData[0];
+                            
+                            // Get detailed place information
+                            const placeResponse = await fetch(
+                                `https://maps.vietmap.vn/api/place/v4?apikey=${apiKey}&refid=${encodeURIComponent(firstResult.ref_id)}`
+                            );
+                            
+                            if (!placeResponse.ok) {
+                                console.error('Place details failed:', placeResponse.status);
+                                return;
+                            }
+                            
+                            const placeData = await placeResponse.json();
+                            
+                            if (placeData && placeData.lat && placeData.lng) {
+                                // Smooth animated transition to location (same as search)
+                                map.flyTo({
+                                    center: [placeData.lng, placeData.lat],
+                                    zoom: 16,
+                                    duration: 2500,
+                                    essential: true,
+                                    easing: (t) => t * (2 - t) // Ease-out quadratic
+                                });
+                                
+                                // Add a temporary marker with popup
+                                const marker = new vietmapgl.Marker({ color: '#8b5cf6' })
+                                    .setLngLat([placeData.lng, placeData.lat])
+                                    .setPopup(
+                                        new vietmapgl.Popup({ offset: 25, closeButton: true, closeOnClick: false })
+                                            .setHTML(`
+                                                <div class="p-3">
+                                                    <strong class="text-purple-600">🤖 AI Phát Hiện</strong>
+                                                    <p class="font-bold mt-1">${issue.fullLocation || issue.location}</p>
+                                                    <p class="text-sm text-gray-600 mt-1">${issue.description}</p>
+                                                    <span class="inline-block mt-2 px-2 py-1 bg-${issue.severity === 'high' ? 'red' : issue.severity === 'medium' ? 'orange' : 'yellow'}-100 text-${issue.severity === 'high' ? 'red' : issue.severity === 'medium' ? 'orange' : 'yellow'}-800 rounded text-xs font-bold">
+                                                        ${issue.severity === 'high' ? 'Nghiêm Trọng' : issue.severity === 'medium' ? 'Trung Bình' : 'Nhẹ'}
+                                                    </span>
+                                                </div>
+                                            `)
+                                    )
+                                    .addTo(map);
+                                
+                                // Open popup after animation completes
+                                setTimeout(() => {
+                                    marker.togglePopup();
+                                }, 2600);
+                            }
+                        } catch (error) {
+                            console.error('Error navigating to AI issue location:', error);
+                        }
+                    }}
+                    onClose={() => setShowAIAlerts(false)}
+                />
             )}
 
             {/* Layer Controls */}

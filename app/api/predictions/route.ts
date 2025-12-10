@@ -14,42 +14,97 @@
  * limitations under the License.
  */
 
-import { NextRequest, NextResponse } from "next/server";
-import {
-  insertPrediction,
-  getActivePredictions,
-  deleteExpiredPredictions,
-  Prediction,
-} from "@/lib/db/predictions";
+import { NextRequest, NextResponse } from 'next/server';
+import { 
+  generateCrowdingPredictions, 
+  getHourlyPredictions,
+  getPredictionForTime 
+} from '@/lib/predictionEngine';
 
-// GET /api/predictions - Get active predictions
-export async function GET() {
+// GET /api/predictions - Get crowding predictions based on historical data
+export async function GET(request: NextRequest) {
   try {
-    // Clean up expired predictions first
-    await deleteExpiredPredictions();
+    const { searchParams } = new URL(request.url);
+    const type = searchParams.get('type') || 'general';
+    const daysToAnalyze = parseInt(searchParams.get('days') || '30');
+    const predictionHours = parseInt(searchParams.get('hours') || '24');
 
-    const predictions = await getActivePredictions();
-    return NextResponse.json({ predictions });
-  } catch (error) {
-    console.error("Failed to get predictions:", error);
+    // General predictions for all areas
+    if (type === 'general') {
+      const predictions = await generateCrowdingPredictions(daysToAnalyze, predictionHours);
+      return NextResponse.json({ 
+        predictions,
+        generatedAt: Date.now(),
+        daysAnalyzed: daysToAnalyze,
+        predictionWindow: predictionHours
+      });
+    }
+
+    // Hourly pattern for specific location
+    if (type === 'hourly') {
+      const lat = parseFloat(searchParams.get('lat') || '0');
+      const lng = parseFloat(searchParams.get('lng') || '0');
+      const radius = parseFloat(searchParams.get('radius') || '1');
+
+      if (!lat || !lng) {
+        return NextResponse.json(
+          { error: 'Missing lat/lng parameters for hourly predictions' },
+          { status: 400 }
+        );
+      }
+
+      const hourlyData = await getHourlyPredictions([lng, lat], radius, daysToAnalyze);
+      return NextResponse.json({ 
+        location: [lng, lat],
+        hourlyData,
+        generatedAt: Date.now(),
+        daysAnalyzed: daysToAnalyze
+      });
+    }
+
+    // Specific time prediction
+    if (type === 'specific') {
+      const lat = parseFloat(searchParams.get('lat') || '0');
+      const lng = parseFloat(searchParams.get('lng') || '0');
+      const targetTime = parseInt(searchParams.get('time') || '0');
+      const radius = parseFloat(searchParams.get('radius') || '1');
+
+      if (!lat || !lng || !targetTime) {
+        return NextResponse.json(
+          { error: 'Missing lat/lng/time parameters' },
+          { status: 400 }
+        );
+      }
+
+      const prediction = await getPredictionForTime(
+        [lng, lat], 
+        new Date(targetTime),
+        radius,
+        daysToAnalyze
+      );
+
+      if (!prediction) {
+        return NextResponse.json(
+          { error: 'No prediction available for this location/time' },
+          { status: 404 }
+        );
+      }
+
+      return NextResponse.json({ 
+        prediction,
+        generatedAt: Date.now()
+      });
+    }
+
     return NextResponse.json(
-      { error: "Failed to get predictions" },
-      { status: 500 },
+      { error: 'Invalid type parameter. Use: general, hourly, or specific' },
+      { status: 400 }
     );
-  }
-}
-
-// POST /api/predictions - Insert prediction
-export async function POST(request: NextRequest) {
-  try {
-    const prediction: Prediction = await request.json();
-    const id = await insertPrediction(prediction);
-    return NextResponse.json({ id }, { status: 201 });
   } catch (error) {
-    console.error("Failed to insert prediction:", error);
+    console.error('Prediction API error:', error);
     return NextResponse.json(
-      { error: "Failed to insert prediction" },
-      { status: 500 },
+      { error: 'Failed to generate predictions' },
+      { status: 500 }
     );
   }
 }

@@ -33,6 +33,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import Maps from "@/components/Maps/Maps";
 import { useToast } from "@/components/ToastProvider";
+import { getCurrentLocation, getDistanceFromUser, formatDistance } from '@/lib/geoUtils';
 
 interface Stats {
   totalZones: number;
@@ -48,6 +49,7 @@ interface Zone {
   title?: string;
   description?: string;
   riskLevel?: number;
+  center?: number[];
 }
 
 interface Report {
@@ -61,6 +63,7 @@ interface Report {
   voteScore?: number;
   zoneCreated?: boolean;
   adminApproved?: boolean;
+  location: [number, number];
 }
 
 export default function AdminPage() {
@@ -81,8 +84,16 @@ export default function AdminPage() {
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [users, setUsers] = useState<Array<{ id: string; username: string; role: string }>>([]);
   const [selectedUser, setSelectedUser] = useState<string>('all');
+  const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
+  const [zoneSortBy, setZoneSortBy] = useState<'recent' | 'nearest'>('recent');
+  const [reportSortBy, setReportSortBy] = useState<'recent' | 'nearest'>('recent');
 
   useEffect(() => {
+    getCurrentLocation().then(location => {
+      if (location) {
+        setUserLocation(location);
+      }
+    });
     fetchData();
     const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
@@ -180,13 +191,29 @@ export default function AdminPage() {
     }
   };
 
-  const filteredReports = reports
-    .filter(r => reportFilter === 'all' || r.status === reportFilter)
-    .filter(r => selectedUser === 'all' || r.reporterName === selectedUser)
-    .filter(r => reportSearch === '' || 
-      r.description.toLowerCase().includes(reportSearch.toLowerCase()) ||
-      r.reporterName?.toLowerCase().includes(reportSearch.toLowerCase())
-    );
+  const filteredReports = (() => {
+    let filtered = reports
+      .filter(r => reportFilter === 'all' || r.status === reportFilter)
+      .filter(r => selectedUser === 'all' || r.reporterName === selectedUser)
+      .filter(r => reportSearch === '' || 
+        r.description.toLowerCase().includes(reportSearch.toLowerCase()) ||
+        r.reporterName?.toLowerCase().includes(reportSearch.toLowerCase())
+      );
+
+    // Sort by distance if nearest is selected
+    if (reportSortBy === 'nearest' && userLocation) {
+      filtered = filtered
+        .map(report => {
+          const distance = getDistanceFromUser(userLocation, report.location);
+          return { report, distance };
+        })
+        .filter(item => item.distance !== null)
+        .sort((a, b) => (a.distance || 0) - (b.distance || 0))
+        .map(item => item.report);
+    }
+
+    return filtered;
+  })();
 
   if (view === 'map') {
     return (
@@ -290,7 +317,7 @@ export default function AdminPage() {
         {/* Reports Management */}
         <div className="bg-gray-800 rounded-2xl shadow-xl mb-8 overflow-hidden">
           <div className="bg-gradient-to-r from-purple-600 to-indigo-600 px-6 py-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-3">
               <h2 className="text-2xl font-bold text-white flex items-center gap-3">
                 <FontAwesomeIcon icon={faExclamationTriangle} />
                 Quản Lý Báo Cáo ({filteredReports.length})
@@ -302,7 +329,31 @@ export default function AdminPage() {
                 🔄 Làm mới
               </button>
             </div>
-            <div className="flex gap-3 mt-4">
+            <div className="flex gap-2 mb-3">
+              <button
+                onClick={() => setReportSortBy('nearest')}
+                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                  reportSortBy === 'nearest'
+                    ? 'bg-white text-purple-600'
+                    : 'bg-white/20 text-white hover:bg-white/30'
+                }`}
+                disabled={!userLocation}
+                title={userLocation ? 'Sắp xếp theo khoảng cách' : 'Cần quyền truy cập vị trí'}
+              >
+                📍 Gần nhất
+              </button>
+              <button
+                onClick={() => setReportSortBy('recent')}
+                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                  reportSortBy === 'recent'
+                    ? 'bg-white text-purple-600'
+                    : 'bg-white/20 text-white hover:bg-white/30'
+                }`}
+              >
+                🕐 Mới nhất
+              </button>
+            </div>
+            <div className="flex gap-3">
               <input
                 type="text"
                 placeholder="🔍 Tìm kiếm báo cáo..."
@@ -350,7 +401,15 @@ export default function AdminPage() {
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
+                        <div className="flex items-center gap-3 mb-2 flex-wrap">
+                          {reportSortBy === 'nearest' && userLocation && report.location && (() => {
+                            const distance = getDistanceFromUser(userLocation, report.location);
+                            return distance !== null ? (
+                              <span className="px-3 py-1 rounded-full text-xs font-bold bg-cyan-100 text-cyan-700">
+                                📍 {formatDistance(distance)}
+                              </span>
+                            ) : null;
+                          })()}
                           <span className={`px-3 py-1 rounded-full text-xs font-bold ${
                             report.type === 'flood' ? 'bg-blue-100 text-blue-700' :
                             report.type === 'outage' ? 'bg-red-100 text-red-700' :
@@ -441,7 +500,7 @@ export default function AdminPage() {
         {/* Zones Management */}
         <div className="bg-gray-800 rounded-2xl shadow-xl overflow-hidden">
           <div className="bg-gradient-to-r from-blue-600 to-cyan-600 px-6 py-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-3">
               <h2 className="text-2xl font-bold text-white flex items-center gap-3">
                 <FontAwesomeIcon icon={faMap} />
                 Quản Lý Khu Vực ({zones.length})
@@ -455,6 +514,30 @@ export default function AdminPage() {
                 </span>
               </div>
             </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setZoneSortBy('nearest')}
+                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                  zoneSortBy === 'nearest'
+                    ? 'bg-white text-blue-600'
+                    : 'bg-white/20 text-white hover:bg-white/30'
+                }`}
+                disabled={!userLocation}
+                title={userLocation ? 'Sắp xếp theo khoảng cách' : 'Cần quyền truy cập vị trí'}
+              >
+                📍 Gần nhất
+              </button>
+              <button
+                onClick={() => setZoneSortBy('recent')}
+                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                  zoneSortBy === 'recent'
+                    ? 'bg-white text-blue-600'
+                    : 'bg-white/20 text-white hover:bg-white/30'
+                }`}
+              >
+                🕐 Mới nhất
+              </button>
+            </div>
           </div>
           <div className="p-6">
             {loading ? (
@@ -463,12 +546,34 @@ export default function AdminPage() {
               <div className="text-center py-12 text-gray-400">Chưa có khu vực nào</div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {zones.map((zone) => (
+                {(() => {
+                  let sortedZones = [...zones];
+                  if (zoneSortBy === 'nearest' && userLocation) {
+                    sortedZones = sortedZones
+                      .map(zone => {
+                        const location = zone.center || [0, 0];
+                        const distance = getDistanceFromUser(userLocation, location as [number, number]);
+                        return { zone, distance };
+                      })
+                      .filter(item => item.distance !== null)
+                      .sort((a, b) => (a.distance || 0) - (b.distance || 0))
+                      .map(item => item.zone);
+                  }
+                  return sortedZones;
+                })().map((zone) => (
                   <div
                     key={zone.id}
                     className="bg-gray-700 rounded-xl p-4 hover:bg-gray-650 transition-colors"
                   >
-                    <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-start justify-between mb-2 flex-wrap gap-2">
+                      {zoneSortBy === 'nearest' && userLocation && zone.center && (() => {
+                        const distance = getDistanceFromUser(userLocation, zone.center as [number, number]);
+                        return distance !== null ? (
+                          <span className="px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700">
+                            📍 {formatDistance(distance)}
+                          </span>
+                        ) : null;
+                      })()}
                       <span className={`px-3 py-1 rounded-full text-xs font-bold ${
                         zone.type === 'flood' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'
                       }`}>
