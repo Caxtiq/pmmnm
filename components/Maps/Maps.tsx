@@ -21,15 +21,9 @@ import { useState, useEffect, useRef } from 'react';
 import AdminPanel from './AdminPanel';
 import UserReportButton from './UserReportButton';
 import WeatherPanel from './WeatherPanel';
-import SearchBox from './SearchBox';
-import RoutePanel from './RoutePanel';
-import AICrawlerButton from './AICrawlerButton';
-import CommunityFeed from './CommunityFeed';
-import LayerControls from '../LayerControls';
-import PredictionPanel from '../PredictionPanel';
-import AITrafficAlerts from '../AITrafficAlerts';
+import CameraViewer from '../CameraViewer';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faMap, faCloudSun, faChartLine, faBrain } from '@fortawesome/free-solid-svg-icons';
+import { faMap, faCloudSun } from '@fortawesome/free-solid-svg-icons';
 
 interface Zone {
     id: string;
@@ -89,93 +83,18 @@ export default function Maps({ isAdmin = false }: MapsProps) {
     const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const [userReports, setUserReports] = useState<UserReport[]>([]);
     const [viewMode, setViewMode] = useState<'map' | 'weather'>('map');
-    const routeClickHandlerRef = useRef<((e: any) => void) | null>(null);
-    const [layerVisibility, setLayerVisibility] = useState({
-        floodZones: true,
-        outageZones: true,
-        userReports: true,
-        safeZones: true,
-        routes: true,
-        heatmap: false,
-        aiTraffic: true,
-    });
-    const [heatmapTimeFilter, setHeatmapTimeFilter] = useState<'24h' | '7d' | '30d' | 'all'>('7d');
-    const [showPredictions, setShowPredictions] = useState(false);
-    const [showAIAlerts, setShowAIAlerts] = useState(false);
-    const [aiTrafficIssues, setAiTrafficIssues] = useState<any[]>([]);
+    const [cameras, setCameras] = useState<any[]>([]);
+    const [selectedCamera, setSelectedCamera] = useState<any | null>(null);
+    const [isDrawingCameraPath, setIsDrawingCameraPath] = useState(false);
+    const [cameraPathPoints, setCameraPathPoints] = useState<[number, number][]>([]);
+    const [cameraPathCallback, setCameraPathCallback] = useState<((path: [number, number][]) => void) | null>(null);
 
     useEffect(() => {
         setIsMounted(true);
     }, []);
 
-    // Handle layer visibility changes
-    const handleToggleLayer = (layer: string, visible: boolean) => {
-        if (!map) return;
-
-        const layerMap: Record<string, string[]> = {
-            floodZones: ['flood-zones', 'zones-outline'],
-            outageZones: ['outage-zones', 'zones-outline'],
-            userReports: ['user-reports-circle', 'user-reports-pulse'],
-            safeZones: ['safe-zones-circle', 'safe-zones-pulse', 'safe-zones-label'],
-            routes: ['zones-lines', 'route-line', 'route-outline'],
-            heatmap: ['heatmap-layer'],
-            aiTraffic: ['ai-traffic-markers', 'ai-traffic-labels'],
-        };
-
-        const layers = layerMap[layer] || [];
-        layers.forEach(layerId => {
-            if (map.getLayer(layerId)) {
-                map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
-            }
-        });
-
-        // Update heatmap data when toggling
-        if (layer === 'heatmap' && visible) {
-            updateHeatmapData();
-        }
-    };
-
-    // Update heatmap based on time filter
-    const updateHeatmapData = () => {
-        if (!map || !map.getSource('heatmap-source')) return;
-
-        const now = Date.now();
-        const timeFilterMs: Record<typeof heatmapTimeFilter, number> = {
-            '24h': 24 * 60 * 60 * 1000,
-            '7d': 7 * 24 * 60 * 60 * 1000,
-            '30d': 30 * 24 * 60 * 60 * 1000,
-            'all': Infinity,
-        };
-
-        const cutoffTime = now - timeFilterMs[heatmapTimeFilter];
-        const filteredReports = userReports.filter(report => report.createdAt >= cutoffTime);
-
-        // Create heatmap features with weight based on severity
-        const features = filteredReports.map(report => {
-            const weight = report.severity === 'high' ? 3 : report.severity === 'medium' ? 2 : 1;
-            return {
-                type: 'Feature' as const,
-                geometry: {
-                    type: 'Point' as const,
-                    coordinates: report.location
-                },
-                properties: {
-                    weight
-                }
-            };
-        });
-
-        const source = map.getSource('heatmap-source') as any;
-        if (source) {
-            source.setData({
-                type: 'FeatureCollection',
-                features
-            });
-        }
-    };
-
-    // Function to fetch zones from API
-    const fetchZones = () => {
+    // Load zones, sensors, and user reports from database on mount
+    useEffect(() => {
         fetch('/api/zones')
             .then(res => res.json())
             .then(data => {
@@ -184,42 +103,6 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                 }
             })
             .catch(err => console.error('Failed to load zones:', err));
-    };
-
-    // Load safe zones on map
-    useEffect(() => {
-        if (!map) return;
-
-        import('@/lib/safeZones').then(({ safeZones }) => {
-            const features = safeZones.map(zone => ({
-                type: 'Feature' as const,
-                geometry: {
-                    type: 'Point' as const,
-                    coordinates: zone.location
-                },
-                properties: {
-                    id: zone.id,
-                    name: zone.name,
-                    type: zone.type,
-                    address: zone.address,
-                    capacity: zone.capacity,
-                    phone: zone.phone
-                }
-            }));
-
-            const source = map.getSource('safe-zones');
-            if (source) {
-                (source as any).setData({
-                    type: 'FeatureCollection',
-                    features
-                });
-            }
-        });
-    }, [map]);
-
-    // Load zones, sensors, user reports, and AI traffic from database on mount
-    useEffect(() => {
-        fetchZones();
         
         fetch('/api/user-reports')
             .then(res => res.json())
@@ -230,18 +113,6 @@ export default function Maps({ isAdmin = false }: MapsProps) {
             })
             .catch(err => console.error('Failed to load user reports:', err));
         
-        // Fetch AI traffic analysis (uses cache if available)
-        fetch('/api/traffic-analysis')
-            .then(res => res.json())
-            .then(data => {
-                if (data.success && data.issues) {
-                    setAiTrafficIssues(data.issues.filter((issue: any) => 
-                        issue.coordinates && issue.coordinates.length > 0
-                    ));
-                }
-            })
-            .catch(err => console.error('Failed to load AI traffic:', err));
-        
         if (isAdmin) {
             fetch('/api/sensors')
                 .then(res => res.json())
@@ -251,6 +122,16 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                     }
                 })
                 .catch(err => console.error('Failed to load sensors:', err));
+            
+            // Load cameras
+            fetch('/api/cameras')
+                .then(res => res.json())
+                .then(data => {
+                    if (Array.isArray(data)) {
+                        setCameras(data);
+                    }
+                })
+                .catch(err => console.error('Failed to load cameras:', err));
         }
     }, [isAdmin]);
 
@@ -290,6 +171,13 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                     setSensors(prev => prev.filter(s => s.id !== message.sensorId));
                 } else if (message.type === 'user_report_created') {
                     setUserReports(prev => [...prev, message.report]);
+                } else if (message.type === 'camera-update') {
+                    // Update camera counts in real-time
+                    setCameras(prev => prev.map(cam => 
+                        cam.id === message.cameraId 
+                            ? { ...cam, currentCounts: message.counts, stats: { ...cam.stats, lastUpdate: message.timestamp } }
+                            : cam
+                    ));
                 }
             } catch (error) {
                 console.error('Failed to parse WebSocket message:', error);
@@ -323,42 +211,19 @@ export default function Maps({ isAdmin = false }: MapsProps) {
         }
     }, [sensors, map, isAdmin]);
 
+    // Update map when cameras change
+    useEffect(() => {
+        if (map && isAdmin && cameras.length > 0) {
+            updateCamerasOnMap(cameras);
+        }
+    }, [cameras, map, isAdmin]);
+
     // Update map when user reports change
     useEffect(() => {
         if (map && userReports.length > 0) {
             updateUserReportsOnMap(userReports);
         }
     }, [userReports, map]);
-
-    // Update heatmap when reports or time filter changes
-    useEffect(() => {
-        if (map && map.getSource('heatmap-source')) {
-            updateHeatmapData();
-        }
-    }, [userReports, heatmapTimeFilter, map]);
-
-    // Update AI traffic layer when issues change
-    useEffect(() => {
-        if (!map || !map.getSource('ai-traffic')) return;
-        
-        const source = map.getSource('ai-traffic') as any;
-        source.setData({
-            type: 'FeatureCollection',
-            features: aiTrafficIssues.map(issue => ({
-                type: 'Feature',
-                geometry: {
-                    type: 'Point',
-                    coordinates: issue.coordinates[0]
-                },
-                properties: {
-                    type: issue.type,
-                    location: issue.fullLocation,
-                    description: issue.description,
-                    severity: issue.severity
-                }
-            }))
-        });
-    }, [aiTrafficIssues, map]);
 
     useEffect(() => {
         if (!isMounted || !mapContainerRef.current || map) return;
@@ -369,7 +234,16 @@ export default function Maps({ isAdmin = false }: MapsProps) {
             container: mapContainerRef.current,
             style: `https://maps.vietmap.vn/maps/styles/tm/style.json?apikey=${apiKey}`,
             center: [105.748684, 20.962594], // Hanoi coordinates
+            
             zoom: 12,
+            transformRequest: (url: string) => {
+                if (url.includes('vietmap.vn')) {
+                    return {
+                        url: url.includes('?') ? `${url}&apikey=${apiKey}` : `${url}?apikey=${apiKey}`
+                    };
+                }
+                return { url };
+            }
         });
 
         mapInstance.addControl(new vietmapgl.NavigationControl(), 'top-right');
@@ -399,6 +273,15 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                         features: []
                     }
                 });
+
+                // Add source for cameras
+                mapInstance.addSource('cameras', {
+                    type: 'geojson',
+                    data: {
+                        type: 'FeatureCollection',
+                        features: []
+                    }
+                });
             }
 
             // Add source for user reports
@@ -407,80 +290,6 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                 data: {
                     type: 'FeatureCollection',
                     features: []
-                }
-            });
-
-            // Add source for safe zones
-            mapInstance.addSource('safe-zones', {
-                type: 'geojson',
-                data: {
-                    type: 'FeatureCollection',
-                    features: []
-                }
-            });
-
-            // Add source for heatmap
-            mapInstance.addSource('heatmap-source', {
-                type: 'geojson',
-                data: {
-                    type: 'FeatureCollection',
-                    features: []
-                }
-            });
-
-            // Add heatmap layer (hidden by default)
-            mapInstance.addLayer({
-                id: 'heatmap-layer',
-                type: 'heatmap',
-                source: 'heatmap-source',
-                layout: {
-                    visibility: 'none'
-                },
-                paint: {
-                    // Increase weight as diameter increases
-                    'heatmap-weight': [
-                        'interpolate',
-                        ['linear'],
-                        ['get', 'weight'],
-                        0, 0,
-                        6, 1
-                    ],
-                    // Increase intensity as zoom level increases
-                    'heatmap-intensity': [
-                        'interpolate',
-                        ['linear'],
-                        ['zoom'],
-                        0, 1,
-                        15, 3
-                    ],
-                    // Color ramp for heatmap - blue to red
-                    'heatmap-color': [
-                        'interpolate',
-                        ['linear'],
-                        ['heatmap-density'],
-                        0, 'rgba(33,102,172,0)',
-                        0.2, 'rgb(103,169,207)',
-                        0.4, 'rgb(209,229,240)',
-                        0.6, 'rgb(253,219,199)',
-                        0.8, 'rgb(239,138,98)',
-                        1, 'rgb(178,24,43)'
-                    ],
-                    // Adjust the heatmap radius by zoom level
-                    'heatmap-radius': [
-                        'interpolate',
-                        ['linear'],
-                        ['zoom'],
-                        0, 2,
-                        15, 20
-                    ],
-                    // Transition from heatmap to circle layer by zoom level
-                    'heatmap-opacity': [
-                        'interpolate',
-                        ['linear'],
-                        ['zoom'],
-                        7, 1,
-                        15, 0.5
-                    ]
                 }
             });
 
@@ -573,16 +382,121 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                         'text-halo-width': 2
                     }
                 });
+
+                // Add camera path line layer
+                mapInstance.addLayer({
+                    id: 'cameras-path',
+                    type: 'line',
+                    source: 'cameras',
+                    paint: {
+                        'line-width': [
+                            'case',
+                            ['get', 'isCrowded'], 8,
+                            5
+                        ],
+                        'line-color': [
+                            'case',
+                            ['get', 'isCrowded'], '#ef4444', // Red when crowded
+                            ['==', ['get', 'status'], 'active'], '#10b981', // Green when active
+                            ['==', ['get', 'status'], 'error'], '#f59e0b', // Orange when error
+                            '#6b7280' // Gray when inactive
+                        ],
+                        'line-opacity': 0.8
+                    }
+                });
+
+                // Add camera start/end markers
+                mapInstance.addLayer({
+                    id: 'cameras-icon',
+                    type: 'circle',
+                    source: 'cameras',
+                    paint: {
+                        'circle-radius': 8,
+                        'circle-color': [
+                            'case',
+                            ['get', 'isCrowded'], '#ef4444',
+                            ['==', ['get', 'status'], 'active'], '#10b981',
+                            ['==', ['get', 'status'], 'error'], '#f59e0b',
+                            '#6b7280'
+                        ],
+                        'circle-stroke-width': 2,
+                        'circle-stroke-color': '#ffffff',
+                        'circle-opacity': 0.9
+                    }
+                });
+
+                // Add camera label with count
+                mapInstance.addLayer({
+                    id: 'cameras-label',
+                    type: 'symbol',
+                    source: 'cameras',
+                    layout: {
+                        'text-field': [
+                            'concat',
+                            '📹 ',
+                            ['get', 'name'],
+                            '\n',
+                            ['to-string', ['get', 'totalCount']],
+                            '/',
+                            ['to-string', ['get', 'threshold']],
+                            ' vehicles',
+                            ['case', ['get', 'isCrowded'], ' 🚨 CROWDED', '']
+                        ],
+                        'text-size': 11,
+                        'text-offset': [0, 0.5],
+                        'text-anchor': 'top',
+                        'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+                        'symbol-placement': 'line-center'
+                    },
+                    paint: {
+                        'text-color': ['case', ['get', 'isCrowded'], '#ef4444', '#000000'],
+                        'text-halo-color': '#ffffff',
+                        'text-halo-width': 2
+                    }
+                });
+
+                // Add click handler for cameras (both path and icon)
+                mapInstance.on('click', 'cameras-path', (e: any) => {
+                    if (e.features && e.features.length > 0) {
+                        const cameraId = e.features[0].properties.id;
+                        const camera = cameras.find(c => c.id === cameraId);
+                        if (camera) {
+                            setSelectedCamera(camera);
+                        }
+                    }
+                });
+
+                mapInstance.on('click', 'cameras-icon', (e: any) => {
+                    if (e.features && e.features.length > 0) {
+                        const cameraId = e.features[0].properties.id;
+                        const camera = cameras.find(c => c.id === cameraId);
+                        if (camera) {
+                            setSelectedCamera(camera);
+                        }
+                    }
+                });
+
+                // Change cursor on hover
+                mapInstance.on('mouseenter', 'cameras-path', () => {
+                    mapInstance.getCanvas().style.cursor = 'pointer';
+                });
+                mapInstance.on('mouseleave', 'cameras-path', () => {
+                    mapInstance.getCanvas().style.cursor = '';
+                });
+                
+                mapInstance.on('mouseenter', 'cameras-icon', () => {
+                    mapInstance.getCanvas().style.cursor = 'pointer';
+                });
+                mapInstance.on('mouseleave', 'cameras-icon', () => {
+                    mapInstance.getCanvas().style.cursor = '';
+                });
             }
 
-            // User reports line layer removed - lines only show when selected in community feed
-
-            // Add user reports circle layer (for point reports and line endpoints)
+            // Add user reports layer
             mapInstance.addLayer({
                 id: 'user-reports-circle',
                 type: 'circle',
                 source: 'user-reports',
-                filter: ['!=', ['get', 'isLine'], true],
                 paint: {
                     'circle-radius': [
                         'case',
@@ -607,7 +521,7 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                 id: 'user-reports-pulse',
                 type: 'circle',
                 source: 'user-reports',
-                filter: ['all', ['!=', ['get', 'isLine'], true], ['==', ['get', 'severity'], 'high']],
+                filter: ['==', ['get', 'severity'], 'high'],
                 paint: {
                     'circle-radius': 20,
                     'circle-color': '#ef4444',
@@ -615,111 +529,6 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                     'circle-stroke-width': 2,
                     'circle-stroke-color': '#ef4444',
                     'circle-stroke-opacity': 0.5
-                }
-            });
-
-            // Add safe zones layer
-            mapInstance.addLayer({
-                id: 'safe-zones-circle',
-                type: 'circle',
-                source: 'safe-zones',
-                paint: {
-                    'circle-radius': 12,
-                    'circle-color': [
-                        'match',
-                        ['get', 'type'],
-                        'hospital', '#ef4444',
-                        'shelter', '#3b82f6',
-                        'high_ground', '#10b981',
-                        'government', '#8b5cf6',
-                        '#6b7280'
-                    ],
-                    'circle-stroke-width': 3,
-                    'circle-stroke-color': '#ffffff',
-                    'circle-opacity': 0.8
-                }
-            });
-
-            // Add safe zones pulse
-            mapInstance.addLayer({
-                id: 'safe-zones-pulse',
-                type: 'circle',
-                source: 'safe-zones',
-                paint: {
-                    'circle-radius': 24,
-                    'circle-color': [
-                        'match',
-                        ['get', 'type'],
-                        'hospital', '#ef4444',
-                        'shelter', '#3b82f6',
-                        'high_ground', '#10b981',
-                        'government', '#8b5cf6',
-                        '#6b7280'
-                    ],
-                    'circle-opacity': 0.2
-                }
-            });
-
-            // Add safe zones label
-            mapInstance.addLayer({
-                id: 'safe-zones-label',
-                type: 'symbol',
-                source: 'safe-zones',
-                layout: {
-                    'text-field': ['get', 'name'],
-                    'text-size': 12,
-                    'text-offset': [0, 1.8],
-                    'text-anchor': 'top',
-                    'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold']
-                },
-                paint: {
-                    'text-color': '#000000',
-                    'text-halo-color': '#ffffff',
-                    'text-halo-width': 2
-                }
-            });
-
-            // Add AI Traffic Issues source
-            mapInstance.addSource('ai-traffic', {
-                type: 'geojson',
-                data: {
-                    type: 'FeatureCollection',
-                    features: []
-                }
-            });
-
-            // Add AI traffic markers
-            mapInstance.addLayer({
-                id: 'ai-traffic-markers',
-                type: 'circle',
-                source: 'ai-traffic',
-                paint: {
-                    'circle-radius': 14,
-                    'circle-color': [
-                        'match',
-                        ['get', 'type'],
-                        'flood', '#3b82f6',
-                        'accident', '#ef4444',
-                        'congestion', '#f97316',
-                        'construction', '#eab308',
-                        '#8b5cf6'
-                    ],
-                    'circle-stroke-width': 3,
-                    'circle-stroke-color': '#ffffff',
-                    'circle-opacity': 0.9
-                }
-            });
-
-            // Add AI traffic labels
-            mapInstance.addLayer({
-                id: 'ai-traffic-labels',
-                type: 'symbol',
-                source: 'ai-traffic',
-                layout: {
-                    'text-field': '🤖',
-                    'text-size': 16,
-                    'text-anchor': 'center',
-                    'text-allow-overlap': true
                 }
             });
 
@@ -795,39 +604,12 @@ export default function Maps({ isAdmin = false }: MapsProps) {
             }, 200);
         };
 
-        const handleSafeZoneClick = (e: any) => {
-            if (!e.features || e.features.length === 0) return;
-            const feature = e.features[0];
-            const props = feature.properties;
-            
-            const popup = new vietmapgl.Popup({ offset: 25, closeButton: true, closeOnClick: false })
-                .setLngLat(e.lngLat)
-                .setHTML(`
-                    <div style="min-width: 200px;">
-                        <h3 style="font-weight: bold; margin-bottom: 8px; font-size: 14px;">${props.name}</h3>
-                        <p style="margin: 4px 0; font-size: 12px; color: #4b5563;"><strong>Loại:</strong> ${
-                            props.type === 'hospital' ? '🏥 Bệnh viện' :
-                            props.type === 'shelter' ? '🏢 Nơi trú ẩn' :
-                            props.type === 'high_ground' ? '⛰️ Vị trí cao' :
-                            props.type === 'government' ? '🏛️ Cơ quan chính phủ' : 'Khác'
-                        }</p>
-                        <p style="margin: 4px 0; font-size: 12px; color: #4b5563;"><strong>Địa chỉ:</strong> ${props.address}</p>
-                        ${props.capacity ? `<p style="margin: 4px 0; font-size: 12px; color: #4b5563;"><strong>Sức chứa:</strong> ${props.capacity} người</p>` : ''}
-                        ${props.phone ? `<p style="margin: 4px 0; font-size: 12px; color: #4b5563;"><strong>Điện thoại:</strong> ${props.phone}</p>` : ''}
-                    </div>
-                `)
-                .addTo(map);
-        };
-
         map.on('mousemove', 'flood-zones', handleFloodHover);
         map.on('mousemove', 'outage-zones', handleOutageHover);
         map.on('mousemove', 'zones-lines', handleLineHover);
         map.on('mouseleave', 'flood-zones', handleLeave);
         map.on('mouseleave', 'outage-zones', handleLeave);
         map.on('mouseleave', 'zones-lines', handleLeave);
-        map.on('click', 'safe-zones-circle', handleSafeZoneClick);
-        map.on('mouseenter', 'safe-zones-circle', () => { map.getCanvas().style.cursor = 'pointer'; });
-        map.on('mouseleave', 'safe-zones-circle', () => { map.getCanvas().style.cursor = ''; });
 
         return () => {
             map.off('mousemove', 'flood-zones', handleFloodHover);
@@ -836,9 +618,6 @@ export default function Maps({ isAdmin = false }: MapsProps) {
             map.off('mouseleave', 'flood-zones', handleLeave);
             map.off('mouseleave', 'outage-zones', handleLeave);
             map.off('mouseleave', 'zones-lines', handleLeave);
-            map.off('click', 'safe-zones-circle', handleSafeZoneClick);
-            map.off('mouseenter', 'safe-zones-circle', () => { map.getCanvas().style.cursor = 'pointer'; });
-            map.off('mouseleave', 'safe-zones-circle', () => { map.getCanvas().style.cursor = ''; });
         };
     }, [map, zones]);
 
@@ -852,7 +631,7 @@ export default function Maps({ isAdmin = false }: MapsProps) {
             const feature = e.features[0];
             const props = feature.properties;
             
-            const popup = new vietmapgl.Popup({ offset: 25, closeButton: true, closeOnClick: false })
+            const popup = new (window as any).maplibregl.Popup({ offset: 25 })
                 .setLngLat(feature.geometry.coordinates)
                 .setHTML(`
                     <div class="p-3 min-w-[250px]">
@@ -908,33 +687,24 @@ export default function Maps({ isAdmin = false }: MapsProps) {
         };
     }, [map, userReports]);
 
-    // Handle route point selection
+    // Handle zone drawing and camera path drawing
     useEffect(() => {
-        if (!map) return;
-
-        const handleClick = (e: any) => {
-            if (routeClickHandlerRef.current) {
-                routeClickHandlerRef.current(e);
-            }
-        };
-
-        map.on('click', handleClick);
-
-        return () => {
-            map.off('click', handleClick);
-        };
-    }, [map]);
-
-    // Handle zone drawing
-    useEffect(() => {
-        if (!map || !isDrawing || routeClickHandlerRef.current) return;
+        if (!map || (!isDrawing && !isDrawingCameraPath)) return;
 
         let centerPoint: number[] | null = drawingCenter;
         let currentRadius = drawingRadius;
-        let linePoints: number[][] = [...drawingPoints];
+        let linePoints: number[][] = isDrawingCameraPath ? [] : [...drawingPoints];
 
         const handleMapClick = (e: any) => {
             const { lng, lat } = e.lngLat;
+            
+            // Handle camera path selection (same pattern as zone line drawing)
+            if (isDrawingCameraPath) {
+                linePoints.push([lng, lat]);
+                setCameraPathPoints(linePoints as [number, number][]);
+                updateLineDrawingLayer(linePoints);
+                return;
+            }
             
             if (drawingShape === 'circle') {
                 if (!centerPoint) {
@@ -966,6 +736,12 @@ export default function Maps({ isAdmin = false }: MapsProps) {
         const handleMouseMove = (e: any) => {
             const { lng, lat } = e.lngLat;
             
+            // Camera path preview (same as zone line)
+            if (isDrawingCameraPath && linePoints.length > 0) {
+                updateLineDrawingLayer([...linePoints, [lng, lat]]);
+                return;
+            }
+            
             if (drawingShape === 'circle' && centerPoint) {
                 const radius = calculateDistance(centerPoint, [lng, lat]);
                 currentRadius = radius;
@@ -978,18 +754,49 @@ export default function Maps({ isAdmin = false }: MapsProps) {
 
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
-                cancelDrawing();
-            } else if (e.key === 'Enter' && drawingShape === 'line' && linePoints.length >= 2) {
-                // Finish line drawing
-                const newZone: Zone = {
-                    id: `zone-${Date.now()}`,
-                    type: drawingType!,
-                    shape: 'line',
-                    coordinates: linePoints
-                };
+                if (isDrawingCameraPath) {
+                    cancelCameraPathDrawing();
+                } else {
+                    cancelDrawing();
+                }
+            } else if (e.key === 'Enter') {
+                if (isDrawingCameraPath && linePoints.length >= 2) {
+                    // Finish camera path drawing - pass linePoints directly
+                    if (cameraPathCallback) {
+                        cameraPathCallback(linePoints as [number, number][]);
+                    }
+                    setIsDrawingCameraPath(false);
+                    setCameraPathPoints([]);
+                    setCameraPathCallback(null);
+                    if (map) {
+                        map.getCanvas().style.cursor = '';
+                        map.dragRotate.enable();
+                        map.touchZoomRotate.enableRotation();
+                        if (map.getSource('drawing-temp')) {
+                            (map.getSource('drawing-temp') as any).setData({
+                                type: 'FeatureCollection',
+                                features: []
+                            });
+                        }
+                        if (map.getSource('drawing-markers')) {
+                            (map.getSource('drawing-markers') as any).setData({
+                                type: 'FeatureCollection',
+                                features: []
+                            });
+                        }
+                    }
+                } else if (drawingShape === 'line' && linePoints.length >= 2) {
+                    // Finish zone line drawing
+                    const newZone: Zone = {
+                        id: `zone-${Date.now()}`,
+                        type: drawingType!,
+                        shape: 'line',
+                        coordinates: linePoints
+                    };
 
-                saveZoneWithDialog(newZone);
-                cancelDrawing();
+                    saveZoneWithDialog(newZone);
+                    cancelDrawing();
+                }
             }
         };
 
@@ -1018,7 +825,7 @@ export default function Maps({ isAdmin = false }: MapsProps) {
             map.off('dblclick', handleDblClick);
             window.removeEventListener('keydown', handleKeyDown);
         };
-    }, [map, isDrawing, zones, drawingType, drawingShape]);
+    }, [map, isDrawing, isDrawingCameraPath, zones, drawingType, drawingShape]);
 
     const calculateDistance = (coord1: number[], coord2: number[]): number => {
         const R = 6371e3; // Earth radius in meters
@@ -1073,6 +880,24 @@ export default function Maps({ isAdmin = false }: MapsProps) {
             initDrawingLayers();
             updateDrawingLayer(center, radius);
         }
+
+        // Update center marker
+        const markerSource = map.getSource('drawing-markers') as any;
+        if (markerSource) {
+            markerSource.setData({
+                type: 'FeatureCollection',
+                features: [{
+                    type: 'Feature',
+                    geometry: {
+                        type: 'Point',
+                        coordinates: center
+                    },
+                    properties: {
+                        label: '🎯 Tâm'
+                    }
+                }]
+            });
+        }
     };
 
     const updateLineDrawingLayer = (points: number[][]) => {
@@ -1095,11 +920,30 @@ export default function Maps({ isAdmin = false }: MapsProps) {
             initDrawingLayers();
             updateLineDrawingLayer(points);
         }
+
+        // Update point markers
+        const markerSource = map.getSource('drawing-markers') as any;
+        if (markerSource) {
+            markerSource.setData({
+                type: 'FeatureCollection',
+                features: points.map((point, index) => ({
+                    type: 'Feature',
+                    geometry: {
+                        type: 'Point',
+                        coordinates: point
+                    },
+                    properties: {
+                        label: index === 0 ? '🟢 Bắt đầu' : index === points.length - 1 ? '🔴 Kết thúc' : `${index + 1}`
+                    }
+                }))
+            });
+        }
     };
 
     const initDrawingLayers = () => {
         if (!map || map.getSource('drawing-temp')) return;
 
+        // Main drawing layer (lines/polygons)
         map.addSource('drawing-temp', {
             type: 'geojson',
             data: {
@@ -1127,6 +971,45 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                 'line-width': 6,
                 'line-opacity': 0.6,
                 'line-dasharray': [2, 2]
+            }
+        });
+
+        // Markers layer for points
+        map.addSource('drawing-markers', {
+            type: 'geojson',
+            data: {
+                type: 'FeatureCollection',
+                features: []
+            }
+        });
+
+        map.addLayer({
+            id: 'drawing-markers-circle',
+            type: 'circle',
+            source: 'drawing-markers',
+            paint: {
+                'circle-radius': 8,
+                'circle-color': '#ffffff',
+                'circle-stroke-width': 3,
+                'circle-stroke-color': drawingType === 'flood' ? '#2563eb' : '#dc2626',
+                'circle-opacity': 1
+            }
+        });
+
+        map.addLayer({
+            id: 'drawing-markers-label',
+            type: 'symbol',
+            source: 'drawing-markers',
+            layout: {
+                'text-field': ['get', 'label'],
+                'text-size': 12,
+                'text-offset': [0, -1.5],
+                'text-anchor': 'bottom'
+            },
+            paint: {
+                'text-color': '#ffffff',
+                'text-halo-color': drawingType === 'flood' ? '#2563eb' : '#dc2626',
+                'text-halo-width': 2
             }
         });
     };
@@ -1163,6 +1046,77 @@ export default function Maps({ isAdmin = false }: MapsProps) {
             map.removeLayer('drawing-temp-fill');
             map.removeLayer('drawing-temp-line');
             map.removeSource('drawing-temp');
+        }
+        
+        if (map && map.getSource('drawing-markers')) {
+            map.removeLayer('drawing-markers-circle');
+            map.removeLayer('drawing-markers-label');
+            map.removeSource('drawing-markers');
+        }
+    };
+
+    const startCameraPathDrawing = (callback: (path: [number, number][]) => void) => {
+        setIsDrawingCameraPath(true);
+        setCameraPathPoints([]);
+        setCameraPathCallback(() => callback);
+        if (map) {
+            map.getCanvas().style.cursor = 'crosshair';
+            // Disable map rotation and pitch during drawing
+            map.dragRotate.disable();
+            map.touchZoomRotate.disableRotation();
+        }
+    };
+
+    const completeCameraPathDrawing = () => {
+        if (cameraPathPoints.length >= 2 && cameraPathCallback) {
+            cameraPathCallback(cameraPathPoints);
+        }
+        setIsDrawingCameraPath(false);
+        setCameraPathPoints([]);
+        setCameraPathCallback(null);
+        if (map) {
+            map.getCanvas().style.cursor = '';
+            // Re-enable map interactions
+            map.dragRotate.enable();
+            map.touchZoomRotate.enableRotation();
+            // Clear drawing layers
+            if (map.getSource('drawing-temp')) {
+                (map.getSource('drawing-temp') as any).setData({
+                    type: 'FeatureCollection',
+                    features: []
+                });
+            }
+            if (map.getSource('drawing-markers')) {
+                (map.getSource('drawing-markers') as any).setData({
+                    type: 'FeatureCollection',
+                    features: []
+                });
+            }
+        }
+    };
+
+    const cancelCameraPathDrawing = () => {
+        setIsDrawingCameraPath(false);
+        setCameraPathPoints([]);
+        setCameraPathCallback(null);
+        if (map) {
+            map.getCanvas().style.cursor = '';
+            // Re-enable map interactions
+            map.dragRotate.enable();
+            map.touchZoomRotate.enableRotation();
+            // Clear drawing layers
+            if (map.getSource('drawing-temp')) {
+                (map.getSource('drawing-temp') as any).setData({
+                    type: 'FeatureCollection',
+                    features: []
+                });
+            }
+            if (map.getSource('drawing-markers')) {
+                (map.getSource('drawing-markers') as any).setData({
+                    type: 'FeatureCollection',
+                    features: []
+                });
+            }
         }
     };
 
@@ -1246,8 +1200,13 @@ export default function Maps({ isAdmin = false }: MapsProps) {
     const updateUserReportsOnMap = (reportsData: UserReport[]) => {
         if (!map) return;
 
-        const features = reportsData.flatMap(report => {
-            const props = {
+        const features = reportsData.map(report => ({
+            type: 'Feature' as const,
+            geometry: {
+                type: 'Point' as const,
+                coordinates: report.location
+            },
+            properties: {
                 id: report.id,
                 type: report.type,
                 severity: report.severity,
@@ -1255,26 +1214,46 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                 reporterName: report.reporterName || 'Ẩn danh',
                 status: report.status,
                 createdAt: report.createdAt
-            };
-
-            // Check if report has multiple coordinates (line report)
-            if ((report as any).coordinates && (report as any).coordinates.length > 1) {
-                // Line reports don't show on map by default - only when selected in community feed
-                return [];
             }
-
-            // Single point report
-            return [{
-                type: 'Feature' as const,
-                geometry: {
-                    type: 'Point' as const,
-                    coordinates: report.location
-                },
-                properties: props
-            }];
-        });
+        }));
 
         const source = map.getSource('user-reports') as any;
+        if (source) {
+            source.setData({
+                type: 'FeatureCollection',
+                features
+            });
+        }
+    };
+
+    const updateCamerasOnMap = (camerasData: any[]) => {
+        if (!map || !isAdmin) return;
+
+        const features = camerasData.map(camera => {
+            const totalCount = camera.currentCounts?.total || 0;
+            const isCrowded = totalCount >= camera.threshold;
+            
+            return {
+                type: 'Feature' as const,
+                geometry: {
+                    type: 'LineString' as const,
+                    coordinates: camera.path // Array of [lng, lat] points
+                },
+                properties: {
+                    id: camera.id,
+                    name: camera.name,
+                    status: camera.status,
+                    threshold: camera.threshold,
+                    isCrowded,
+                    totalCount,
+                    carCount: camera.currentCounts?.car || 0,
+                    motorcycleCount: camera.currentCounts?.motorcycle || 0,
+                    lastUpdate: camera.stats?.lastUpdate || 0
+                }
+            };
+        });
+
+        const source = map.getSource('cameras') as any;
         if (source) {
             source.setData({
                 type: 'FeatureCollection',
@@ -1375,85 +1354,6 @@ export default function Maps({ isAdmin = false }: MapsProps) {
         }
     }, [zones, map]);
 
-    const handleSelectLocation = async (refId: string, display: string) => {
-        try {
-            const apiKey = process.env.NEXT_PUBLIC_VIETMAP_API_KEY;
-            const response = await fetch(`https://maps.vietmap.vn/api/place/v4?apikey=${apiKey}&refid=${encodeURIComponent(refId)}`);
-            const data = await response.json();
-            
-            if (data && data.lat && data.lng) {
-                const coords: [number, number] = [data.lng, data.lat];
-                
-                // Smooth animated transition to location
-                map?.flyTo({
-                    center: coords,
-                    zoom: 16,
-                    duration: 2500,
-                    essential: true,
-                    easing: (t) => t * (2 - t)
-                });
-                
-                // Create popup content with navigation button
-                const popupContent = document.createElement('div');
-                popupContent.className = 'p-3 min-w-[250px]';
-                popupContent.innerHTML = `
-                    <div class="mb-3">
-                        <div class="flex items-center gap-2 mb-2">
-                            <svg class="w-4 h-4 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/>
-                            </svg>
-                            <strong class="text-gray-800">${display}</strong>
-                        </div>
-                        <p class="text-xs text-gray-500">${data.address || ''}</p>
-                    </div>
-                    <button id="navigate-btn" class="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold py-2.5 px-4 rounded-lg transition-all duration-200 flex items-center justify-center gap-2 shadow-md hover:shadow-lg">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/>
-                        </svg>
-                        <span>Chỉ Đường Đến Đây</span>
-                    </button>
-                `;
-                
-                // Add event listener to navigation button
-                const navigateBtn = popupContent.querySelector('#navigate-btn');
-                if (navigateBtn) {
-                    navigateBtn.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        // Trigger route panel with this location as destination
-                        const event = new CustomEvent('openRoutePanel', { 
-                            detail: { 
-                                destination: coords,
-                                destinationName: display 
-                            } 
-                        });
-                        window.dispatchEvent(event);
-                    });
-                }
-                
-                // Add marker with popup
-                const marker = new vietmapgl.Marker({ color: '#3b82f6' })
-                    .setLngLat(coords)
-                    .setPopup(
-                        new vietmapgl.Popup({ 
-                            offset: 25, 
-                            closeButton: true, 
-                            closeOnClick: false,
-                            maxWidth: '300px'
-                        })
-                        .setDOMContent(popupContent)
-                    )
-                    .addTo(map!);
-                
-                // Open popup after animation
-                setTimeout(() => {
-                    marker.togglePopup();
-                }, 2600);
-            }
-        } catch (error) {
-            console.error('Failed to get place details:', error);
-        }
-    };
-
     if (!isMounted) {
         return <div style={{ width: '100vw', height: '100vh', backgroundColor: '#f0f0f0' }} />;
     }
@@ -1461,14 +1361,6 @@ export default function Maps({ isAdmin = false }: MapsProps) {
     return (
         <>
             <div id="map" ref={mapContainerRef} style={{ width: '100vw', height: '100vh' }} />
-            
-            {/* Search Box - Top center for all users */}
-            <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-30">
-                <SearchBox 
-                    onSelectLocation={handleSelectLocation}
-                    mapCenter={map ? [map.getCenter().lng, map.getCenter().lat] : undefined}
-                />
-            </div>
             
             {/* Hover Popup */}
             {hoveredZone && popupPosition && (
@@ -1577,27 +1469,111 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                         map={map}
                         onDrawZone={handleDrawZone}
                         onClearZones={handleClearZones}
+                        onStartCameraPathDrawing={startCameraPathDrawing}
+                        onCompleteCameraPathDrawing={completeCameraPathDrawing}
+                        onCancelCameraPathDrawing={cancelCameraPathDrawing}
+                        onOpenCamera={(camera) => setSelectedCamera(camera)}
                     />
-                    <div className="fixed top-4 right-4 z-[60]">
-                        <AICrawlerButton onZonesCreated={fetchZones} />
-                    </div>
-                    {isDrawing && (
-                        <div className="fixed top-32 right-4 z-50 bg-yellow-500 text-white px-4 py-2 rounded-lg shadow-lg">
-                            {drawingShape === 'circle' ? (
-                                !drawingCenter 
-                                    ? `Click to set center of ${drawingType} zone`
-                                    : `Click again to finish zone (Radius: ${Math.round(drawingRadius)}m) - Press ESC to cancel`
-                            ) : (
-                                `Drawing ${drawingType} route (${drawingPoints.length} points) - Double-click or Enter to finish, ESC to cancel`
-                            )}
+                    {(isDrawing || isDrawingCameraPath) && (
+                        <div className="fixed top-4 right-4 z-50 space-y-3">
+                            {/* Main instruction card */}
+                            <div className="bg-gradient-to-r from-yellow-500 to-orange-500 text-white px-6 py-4 rounded-xl shadow-2xl border-2 border-yellow-300 animate-pulse">
+                                <div className="flex items-center gap-3 mb-2">
+                                    <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+                                        {isDrawingCameraPath ? '📹' : (drawingShape === 'circle' ? '⭕' : '📍')}
+                                    </div>
+                                    <div className="font-bold text-lg">
+                                        {isDrawingCameraPath ? 'Chọn Đường Camera' : (drawingShape === 'circle' ? 'Vẽ Khu Vực Tròn' : 'Vẽ Tuyến Đường')}
+                                    </div>
+                                </div>
+                                <div className="text-sm space-y-1 bg-white/10 rounded-lg p-3">
+                                    {isDrawingCameraPath ? (
+                                        <>
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <span className="text-lg">🖱️</span>
+                                                <span>Click để thêm điểm</span>
+                                                <span className="bg-white/20 rounded px-2 py-0.5 ml-auto">
+                                                    {cameraPathPoints.length} điểm
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-lg">✅</span>
+                                                <span>Enter để hoàn thành (tối thiểu 2 điểm)</span>
+                                            </div>
+                                        </>
+                                    ) : drawingShape === 'circle' ? (
+                                        !drawingCenter ? (
+                                            <>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-lg">🖱️</span>
+                                                    <span className="font-semibold">Bước 1/2:</span>
+                                                    <span>Click vào bản đồ để đặt tâm</span>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <span className="text-lg">✅</span>
+                                                    <span className="font-semibold">Bước 2/2:</span>
+                                                    <span>Click lần nữa để hoàn thành</span>
+                                                </div>
+                                                <div className="bg-white/20 rounded px-2 py-1 text-center font-bold">
+                                                    Bán kính: {Math.round(drawingRadius)}m
+                                                </div>
+                                            </>
+                                        )
+                                    ) : (
+                                        <>
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <span className="text-lg">🖱️</span>
+                                                <span>Click để thêm điểm</span>
+                                                <span className="bg-white/20 rounded px-2 py-0.5 ml-auto">
+                                                    {drawingPoints.length} điểm
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-lg">✅</span>
+                                                <span>Double-click hoặc Enter để hoàn thành</span>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                            
+                            {/* Quick actions */}
+                            <div className="bg-white rounded-lg shadow-xl p-3 space-y-2">
+                                <div className="text-xs text-gray-600 font-semibold mb-2">Phím tắt:</div>
+                                <div className="flex items-center gap-2 text-sm">
+                                    <kbd className="px-2 py-1 bg-gray-100 border border-gray-300 rounded text-xs font-mono">ESC</kbd>
+                                    <span className="text-gray-700">Hủy bỏ</span>
+                                </div>
+                                {((drawingShape === 'line' && drawingPoints.length >= 2) || (isDrawingCameraPath && cameraPathPoints.length >= 2)) && (
+                                    <div className="flex items-center gap-2 text-sm">
+                                        <kbd className="px-2 py-1 bg-gray-100 border border-gray-300 rounded text-xs font-mono">Enter</kbd>
+                                        <span className="text-gray-700">Hoàn thành</span>
+                                    </div>
+                                )}
+                                <button
+                                    onClick={isDrawingCameraPath ? cancelCameraPathDrawing : cancelDrawing}
+                                    className="w-full mt-2 px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-semibold transition-colors"
+                                >
+                                    ❌ Hủy Vẽ
+                                </button>
+                            </div>
                         </div>
+                    )}
+                    
+                    {/* Crosshair cursor overlay */}
+                    {(isDrawing || isDrawingCameraPath) && (
+                        <style>{`
+                            .mapboxgl-canvas-container.mapboxgl-interactive {
+                                cursor: crosshair !important;
+                            }
+                        `}</style>
                     )}
                 </>
             )}
 
-            {/* Community Feed - Always visible on left for non-admin users */}
-            {!isAdmin && <CommunityFeed map={map} />}
-            
             {/* User Report Button - Always visible for all users */}
             {!isAdmin && <UserReportButton map={map} />}
 
@@ -1611,7 +1587,7 @@ export default function Maps({ isAdmin = false }: MapsProps) {
 
             {/* View Mode Switcher - Only for non-admin users */}
             {!isAdmin && (
-                <div className="fixed top-4 left-4 z-40 flex gap-2">
+                <div className="fixed top-4 right-4 z-50 flex gap-2">
                     <button
                         onClick={() => setViewMode('map')}
                         className={`px-4 py-2 rounded-lg font-semibold transition-all shadow-lg ${
@@ -1634,142 +1610,17 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                         <FontAwesomeIcon icon={faCloudSun} className="mr-2" />
                         Thời Tiết
                     </button>
-                    <button
-                        onClick={() => setShowPredictions(!showPredictions)}
-                        className={`px-4 py-2 rounded-lg font-semibold transition-all shadow-lg ${
-                            showPredictions
-                                ? 'bg-indigo-600 text-white'
-                                : 'bg-white text-gray-700 hover:bg-gray-100'
-                        }`}
-                        title="Dự đoán mật độ"
-                    >
-                        <FontAwesomeIcon icon={faChartLine} className="mr-2" />
-                        Dự Đoán
-                    </button>
-                    <button
-                        onClick={() => setShowAIAlerts(!showAIAlerts)}
-                        className={`px-4 py-2 rounded-lg font-semibold transition-all shadow-lg ${
-                            showAIAlerts
-                                ? 'bg-purple-600 text-white'
-                                : 'bg-white text-gray-700 hover:bg-gray-100'
-                        }`}
-                        title="AI phân tích tin tức"
-                    >
-                        <FontAwesomeIcon icon={faBrain} className="mr-2" />
-                        AI Tin Tức
-                    </button>
                 </div>
             )}
 
-            {/* Prediction Panel - Only for non-admin users */}
-            {!isAdmin && showPredictions && (
-                <PredictionPanel
-                    onPredictionClick={(location) => {
-                        if (map) {
-                            map.flyTo({
-                                center: location,
-                                zoom: 14,
-                                duration: 2000,
-                                essential: true
-                            });
-                        }
-                    }}
-                    onClose={() => setShowPredictions(false)}
+            {/* Camera Viewer Modal */}
+            {selectedCamera && (
+                <CameraViewer
+                    cameraId={selectedCamera.id}
+                    cameraName={selectedCamera.name}
+                    onClose={() => setSelectedCamera(null)}
                 />
             )}
-
-            {/* AI Traffic Alerts - Only for non-admin users */}
-            {!isAdmin && showAIAlerts && (
-                <AITrafficAlerts
-                    onIssueClick={async (issue) => {
-                        if (!map) return;
-                        
-                        try {
-                            const apiKey = process.env.NEXT_PUBLIC_VIETMAP_API_KEY;
-                            
-                            // Search for the location using autocomplete API
-                            const searchQuery = encodeURIComponent(issue.location + ', Hà Nội, Vietnam');
-                            const searchResponse = await fetch(
-                                `https://maps.vietmap.vn/api/autocomplete/v4?apikey=${apiKey}&text=${searchQuery}&display_type=1`
-                            );
-                            
-                            if (!searchResponse.ok) {
-                                console.error('Search failed:', searchResponse.status);
-                                return;
-                            }
-                            
-                            const searchData = await searchResponse.json();
-                            
-                            if (!searchData || searchData.length === 0) {
-                                console.log('No location found for:', issue.location);
-                                return;
-                            }
-                            
-                            // Get the first result's ref_id
-                            const firstResult = searchData[0];
-                            
-                            // Get detailed place information
-                            const placeResponse = await fetch(
-                                `https://maps.vietmap.vn/api/place/v4?apikey=${apiKey}&refid=${encodeURIComponent(firstResult.ref_id)}`
-                            );
-                            
-                            if (!placeResponse.ok) {
-                                console.error('Place details failed:', placeResponse.status);
-                                return;
-                            }
-                            
-                            const placeData = await placeResponse.json();
-                            
-                            if (placeData && placeData.lat && placeData.lng) {
-                                // Smooth animated transition to location (same as search)
-                                map.flyTo({
-                                    center: [placeData.lng, placeData.lat],
-                                    zoom: 16,
-                                    duration: 2500,
-                                    essential: true,
-                                    easing: (t) => t * (2 - t) // Ease-out quadratic
-                                });
-                                
-                                // Add a temporary marker with popup
-                                const marker = new vietmapgl.Marker({ color: '#8b5cf6' })
-                                    .setLngLat([placeData.lng, placeData.lat])
-                                    .setPopup(
-                                        new vietmapgl.Popup({ offset: 25, closeButton: true, closeOnClick: false })
-                                            .setHTML(`
-                                                <div class="p-3">
-                                                    <strong class="text-purple-600">🤖 AI Phát Hiện</strong>
-                                                    <p class="font-bold mt-1">${issue.fullLocation || issue.location}</p>
-                                                    <p class="text-sm text-gray-600 mt-1">${issue.description}</p>
-                                                    <span class="inline-block mt-2 px-2 py-1 bg-${issue.severity === 'high' ? 'red' : issue.severity === 'medium' ? 'orange' : 'yellow'}-100 text-${issue.severity === 'high' ? 'red' : issue.severity === 'medium' ? 'orange' : 'yellow'}-800 rounded text-xs font-bold">
-                                                        ${issue.severity === 'high' ? 'Nghiêm Trọng' : issue.severity === 'medium' ? 'Trung Bình' : 'Nhẹ'}
-                                                    </span>
-                                                </div>
-                                            `)
-                                    )
-                                    .addTo(map);
-                                
-                                // Open popup after animation completes
-                                setTimeout(() => {
-                                    marker.togglePopup();
-                                }, 2600);
-                            }
-                        } catch (error) {
-                            console.error('Error navigating to AI issue location:', error);
-                        }
-                    }}
-                    onClose={() => setShowAIAlerts(false)}
-                />
-            )}
-
-            {/* Layer Controls */}
-            <LayerControls 
-                onToggleLayer={handleToggleLayer}
-                heatmapTimeFilter={heatmapTimeFilter}
-                onHeatmapTimeFilterChange={setHeatmapTimeFilter}
-            />
-
-            {/* Route Panel - Available for all users */}
-            {!isAdmin && <RoutePanel map={map} zones={zones} onMapClick={(handler) => { routeClickHandlerRef.current = handler; }} />}
         </>
     );
 }

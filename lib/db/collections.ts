@@ -24,6 +24,8 @@ export const COLLECTIONS = {
   USER_REPORTS: "user_reports",
   USERS: "users",
   AI_TRAFFIC_ANALYSIS: "ai_traffic_analysis",
+  CAMERAS: "cameras",
+  CAMERA_DETECTION_LOGS: "camera_detection_logs",
 };
 
 // Initialize database indexes
@@ -67,6 +69,21 @@ export async function initializeIndexes(db: any) {
     await db
       .collection(COLLECTIONS.USER_REPORTS)
       .createIndex({ createdAt: -1 });
+
+    // Camera indexes
+    await db
+      .collection(COLLECTIONS.CAMERAS)
+      .createIndex({ id: 1 }, { unique: true });
+    await db.collection(COLLECTIONS.CAMERAS).createIndex({ status: 1 });
+    await db.collection(COLLECTIONS.CAMERAS).createIndex({ createdAt: -1 });
+
+    // Camera detection logs indexes
+    await db
+      .collection(COLLECTIONS.CAMERA_DETECTION_LOGS)
+      .createIndex({ cameraId: 1, timestamp: -1 });
+    await db
+      .collection(COLLECTIONS.CAMERA_DETECTION_LOGS)
+      .createIndex({ timestamp: -1 });
 
     console.log("MongoDB indexes initialized");
   } catch (error) {

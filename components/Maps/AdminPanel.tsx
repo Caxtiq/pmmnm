@@ -17,6 +17,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
+import CameraManager from '../CameraManager';
 
 const WorkflowEditor = dynamic(() => import('./WorkflowEditor'), { ssr: false });
 
@@ -64,12 +65,16 @@ interface AdminPanelProps {
     onClearZones: () => void;
     onAddSensor?: (sensor: Omit<Sensor, 'id'>) => void;
     onAddSensorRule?: (rule: Omit<SensorRule, 'id'>) => void;
+    onStartCameraPathDrawing?: (callback: (path: [number, number][]) => void) => void;
+    onCompleteCameraPathDrawing?: () => void;
+    onCancelCameraPathDrawing?: () => void;
+    onOpenCamera?: (camera: any) => void;
 }
 
-export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor, onAddSensorRule }: AdminPanelProps) {
+export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor, onAddSensorRule, onStartCameraPathDrawing, onCompleteCameraPathDrawing, onCancelCameraPathDrawing, onOpenCamera }: AdminPanelProps) {
     const [isOpen, setIsOpen] = useState(true);
     const [activeDrawMode, setActiveDrawMode] = useState<'flood' | 'outage' | null>(null);
-    const [activeTab, setActiveTab] = useState<'zones' | 'reports'>('zones');
+    const [activeTab, setActiveTab] = useState<'zones' | 'reports' | 'cameras'>('zones');
     const [panelWidth, setPanelWidth] = useState(384); // 96 * 4 = 384px (w-96)
     const [workflowWidth, setWorkflowWidth] = useState(50); // 50% of screen
     const [isResizing, setIsResizing] = useState(false);
@@ -77,6 +82,7 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
     const [sensors, setSensors] = useState<Sensor[]>([]);
     const [sensorRules, setSensorRules] = useState<SensorRule[]>([]);
     const [userReports, setUserReports] = useState<UserReport[]>([]);
+    const [cameras, setCameras] = useState<any[]>([]);
     const [isAddingSensor, setIsAddingSensor] = useState(false);
     const [isAddingRule, setIsAddingRule] = useState(false);
     const [newSensor, setNewSensor] = useState({
@@ -107,8 +113,16 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
             .catch(err => console.error('Failed to load sensors:', err));
     };
 
+    const reloadCameras = () => {
+        fetch('/api/cameras')
+            .then(res => res.json())
+            .then(data => setCameras(data.cameras || []))
+            .catch(err => console.error('Failed to load cameras:', err));
+    };
+
     useEffect(() => {
         reloadSensors();
+        reloadCameras();
 
         fetch('/api/sensor-rules')
             .then(res => res.json())
@@ -318,6 +332,16 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                 }`}
                             >
                                 📢 Báo Cáo ({userReports.filter(r => r.status === 'new').length})
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('cameras' as any)}
+                                className={`pb-2 px-4 font-medium transition-colors ${
+                                    activeTab === 'cameras'
+                                        ? 'border-b-2 border-purple-500 text-purple-600'
+                                        : 'text-gray-600 hover:text-gray-800'
+                                }`}
+                            >
+                                📹 Camera
                             </button>
                         </div>
 
@@ -578,6 +602,140 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                                     )}
                                 </div>
                             </>
+                        )}
+
+                        {activeTab === 'cameras' && (
+                            <div className="space-y-4">
+                                <div className="mb-4">
+                                    <h3 className="text-lg font-bold text-gray-800">
+                                        📹 Camera Giám Sát
+                                    </h3>
+                                    <p className="text-sm text-gray-600 mt-1">
+                                        Vẽ đường để đặt camera giám sát giao thông
+                                    </p>
+                                </div>
+
+                                <button
+                                    onClick={() => {
+                                        if (onStartCameraPathDrawing) {
+                                            onStartCameraPathDrawing((path) => {
+                                                const cameraName = prompt('Tên camera:', `Camera ${cameras.length + 1}`);
+                                                if (!cameraName) return;
+                                                
+                                                const thresholdInput = prompt('Ngưỡng phương tiện (số xe vượt ngưỡng sẽ cảnh báo):', '50');
+                                                const threshold = parseInt(thresholdInput || '50');
+                                                
+                                                const newCamera = {
+                                                    name: cameraName,
+                                                    path: path,
+                                                    threshold: threshold,
+                                                    streamUrl: '',
+                                                    isActive: true
+                                                };
+                                                
+                                                fetch('/api/cameras', {
+                                                    method: 'POST',
+                                                    headers: { 'Content-Type': 'application/json' },
+                                                    body: JSON.stringify(newCamera)
+                                                })
+                                                .then(res => res.json())
+                                                .then(data => {
+                                                    console.log('Camera created:', data);
+                                                    reloadCameras();
+                                                })
+                                                .catch(err => console.error('Error creating camera:', err));
+                                            });
+                                        }
+                                    }}
+                                    className="w-full p-4 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 transition-colors shadow-md hover:shadow-lg"
+                                >
+                                    📹 Vẽ Đường Camera
+                                </button>
+
+                                {/* Camera List */}
+                                <div className="space-y-2">
+                                    <h4 className="font-semibold text-gray-700 text-sm">Danh Sách Camera ({cameras.length})</h4>
+                                    {cameras.length === 0 ? (
+                                        <p className="text-sm text-gray-500 italic">Chưa có camera nào</p>
+                                    ) : (
+                                        <div className="space-y-2 max-h-96 overflow-y-auto">
+                                            {cameras.map((camera) => {
+                                                const isActive = camera.status === 'active';
+                                                return (
+                                                <div key={camera.id} className="bg-white border-2 border-purple-200 rounded-lg p-3">
+                                                    <div className="flex items-start justify-between mb-2">
+                                                        <div className="flex-1">
+                                                            <h5 className="font-semibold text-gray-800">{camera.name}</h5>
+                                                            <p className="text-xs text-gray-600">Ngưỡng: {camera.threshold} xe</p>
+                                                            <p className="text-xs text-gray-600">{camera.path?.length || 0} điểm</p>
+                                                        </div>
+                                                        <span className={`px-2 py-1 rounded text-xs font-semibold ${isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
+                                                            {isActive ? '✓ Hoạt động' : '⊗ Tắt'}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex gap-2 mb-2">
+                                                        <button
+                                                            onClick={() => {
+                                                                if (onOpenCamera) {
+                                                                    onOpenCamera(camera);
+                                                                }
+                                                            }}
+                                                            className="flex-1 px-3 py-1 text-xs bg-blue-500 hover:bg-blue-600 text-white rounded font-semibold transition-colors"
+                                                        >
+                                                            📹 Xem
+                                                        </button>
+                                                    </div>
+                                                    <div className="flex gap-2">
+                                                        <button
+                                                            onClick={() => {
+                                                                fetch('/api/cameras', {
+                                                                    method: 'PATCH',
+                                                                    headers: { 'Content-Type': 'application/json' },
+                                                                    body: JSON.stringify({ 
+                                                                        id: camera.id,
+                                                                        status: isActive ? 'inactive' : 'active'
+                                                                    })
+                                                                })
+                                                                .then(() => reloadCameras());
+                                                            }}
+                                                            className={`flex-1 px-3 py-1 text-xs rounded font-semibold transition-colors ${
+                                                                isActive 
+                                                                ? 'bg-gray-200 hover:bg-gray-300 text-gray-700' 
+                                                                : 'bg-green-200 hover:bg-green-300 text-green-700'
+                                                            }`}
+                                                        >
+                                                            {isActive ? 'Tắt' : 'Bật'}
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                if (confirm(`Xóa camera "${camera.name}"?`)) {
+                                                                    fetch(`/api/cameras?id=${camera.id}`, { method: 'DELETE' })
+                                                                        .then(() => reloadCameras());
+                                                                }
+                                                            }}
+                                                            className="flex-1 px-3 py-1 text-xs bg-red-200 hover:bg-red-300 text-red-700 rounded font-semibold transition-colors"
+                                                        >
+                                                            Xóa
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
+                                    <h4 className="font-semibold text-blue-800 mb-2">💡 Hướng Dẫn</h4>
+                                    <ul className="text-sm text-blue-700 space-y-1">
+                                        <li>• Click "Vẽ Đường Camera" để tạo camera mới</li>
+                                        <li>• Click trên bản đồ để thêm điểm</li>
+                                        <li>• Nhấn Enter để hoàn thành (tối thiểu 2 điểm)</li>
+                                        <li>• Nhấn ESC để hủy</li>
+                                        <li>• Bật/Tắt hoặc Xóa camera trong danh sách</li>
+                                    </ul>
+                                </div>
+                            </div>
                         )}
 
                         {false && (
@@ -1222,6 +1380,7 @@ export default function AdminPanel({ map, onDrawZone, onClearZones, onAddSensor,
                     </div>
                 </div>
             )}
+
         </>
     );
 }

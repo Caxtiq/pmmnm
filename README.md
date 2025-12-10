@@ -20,6 +20,11 @@
 - 📡 Giám sát dữ liệu cảm biến theo thời gian thực  
 - 🌊 Phát hiện khu vực ngập tự động  
 - ⚡ Cảnh báo gián đoạn giao thông  
+- 📹 **Hệ thống camera giám sát với AI** (Mới!)
+  - Phát hiện và đếm phương tiện tự động với YOLOv11
+  - Streaming video trực tiếp qua WebRTC
+  - Cảnh báo tự động khi vượt ngưỡng
+  - Quản lý nhiều camera trên bản đồ
 - 📊 Trình chỉnh sửa workflow tự động  
 - 📢 Quản lý báo cáo người dùng  
 - 🌤️ Tích hợp dữ liệu thời tiết  
@@ -89,6 +94,27 @@ bun run dev:next
 - Frontend: http://localhost:3001  
 - WebSocket: ws://localhost:3001/ws  
 
+## Hệ thống Camera AI (Tùy chọn)
+
+Để sử dụng tính năng giám sát camera với AI:
+
+1. **Cài đặt Python AI Server**
+   ```bash
+   pip install -r ai-server-requirements.txt
+   ```
+
+2. **Xem hướng dẫn chi tiết**
+   - Đọc [CAMERA_AI_SERVER.md](./CAMERA_AI_SERVER.md) để biết cách cài đặt và cấu hình
+   - Hướng dẫn bao gồm: YOLOv11, WebRTC streaming, multi-camera setup
+   - Hỗ trợ RTSP, HTTP stream, USB camera, và video file
+
+3. **Quản lý Camera**
+   - Đăng nhập với quyền admin
+   - Mở Admin Panel → Tab "📹 Camera"
+   - Click "Mở Trình Quản Lý Camera"
+   - Thêm camera và chọn vị trí trên bản đồ
+   - Click vào camera marker để xem video trực tiếp
+
 ## Triển khai Production
 
 ### Cách 1: Docker (Khuyến nghị)
@@ -152,6 +178,12 @@ NODE_ENV=production bun run start
 
 ### User Reports
 - `GET /api/user-reports` – Lấy danh sách báo cáo  
+
+### Cameras
+- `GET /api/cameras` – Lấy danh sách cameras  
+- `POST /api/cameras` – Tạo camera mới  
+- `PATCH /api/cameras` – Cập nhật camera  
+- `DELETE /api/cameras` – Xóa camera  
 - `POST /api/user-reports` – Gửi báo cáo  
 - `PUT /api/user-reports?id=xxx` – Cập nhật trạng thái  
 - `DELETE /api/user-reports?id=xxx` – Xóa báo cáo  
