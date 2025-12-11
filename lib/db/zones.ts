@@ -25,6 +25,8 @@ export interface Zone {
   radius?: number;
   coordinates?: number[][];
   riskLevel?: number;
+  title?: string;
+  cameraId?: string;
   createdAt?: number;
   updatedAt?: number;
 }
@@ -96,4 +98,17 @@ export async function deleteZonesByType(
 ): Promise<void> {
   const db = await getDatabase();
   await db.collection(COLLECTIONS.ZONES).deleteMany({ type });
+}
+
+// Get zone by camera ID
+export async function getZoneByCameraId(cameraId: string): Promise<Zone | null> {
+  const db = await getDatabase();
+  const zone = await db.collection(COLLECTIONS.ZONES).findOne({ cameraId });
+  return zone ? { ...zone, _id: undefined } as any : null;
+}
+
+// Delete zone by camera ID
+export async function deleteZoneByCameraId(cameraId: string): Promise<void> {
+  const db = await getDatabase();
+  await db.collection(COLLECTIONS.ZONES).deleteMany({ cameraId });
 }

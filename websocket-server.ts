@@ -107,6 +107,7 @@ const server = Bun.serve<WebSocketData>({
 
 // Handler functions
 import { updateCameraCounts, getCameraById, updateCameraWebRTC } from './lib/db/cameras';
+import { createZone, deleteZoneByCameraId, getZoneByCameraId } from './lib/db/zones';
 
 async function handleCameraDetection(data: any) {
   const { cameraId, counts, uniqueCounts, timestamp } = data;
@@ -119,22 +120,53 @@ async function handleCameraDetection(data: any) {
     const camera = await getCameraById(cameraId);
     if (!camera) return;
     
-    const thresholds = camera.thresholds;
-    if (!thresholds) return;
+    // Safety checks
+    if (!camera.path || camera.path.length < 2) {
+      console.warn(`Camera ${cameraId} has invalid path, skipping zone creation`);
+      return;
+    }
     
-    const exceeded = Object.keys(counts).some((key) => {
-      const vehicleType = key as keyof typeof counts;
-      const threshold = thresholds[vehicleType as keyof typeof thresholds];
-      return threshold !== undefined && counts[vehicleType] > threshold;
-    });
+    if (!camera.threshold || camera.threshold <= 0) {
+      console.warn(`Camera ${cameraId} has invalid threshold, skipping zone creation`);
+      return;
+    }
     
-    if (exceeded) {
-      console.log(`⚠️  Camera ${cameraId} threshold exceeded:`, counts);
+    const totalCount = counts?.total || 0;
+    const isCrowded = totalCount > camera.threshold;
+    
+    // Check if zone already exists for this camera
+    const existingZone = await getZoneByCameraId(cameraId);
+    
+    if (isCrowded && !existingZone) {
+      // Create new outage zone for traffic jam
+      const zone = {
+        id: `camera-zone-${cameraId}`,
+        type: 'outage' as const,
+        shape: 'line' as const,
+        coordinates: camera.path,
+        riskLevel: Math.min(100, Math.floor((totalCount / camera.threshold) * 50 + 50)),
+        title: 'Tắc đường',
+        cameraId: cameraId
+      };
       
-      // TODO: Execute camera actions
-      // - Create flood/outage zones
-      // - Send alerts
-      // - Trigger graph nodes
+      await createZone(zone);
+      console.log(`🚦 Created traffic jam zone for camera ${cameraId} (${totalCount}/${camera.threshold})`);
+      
+      // Broadcast zone creation to all users
+      broadcastToUsers({
+        type: 'zone-created',
+        zone
+      });
+    } else if (!isCrowded && existingZone) {
+      // Remove zone when traffic is back to normal
+      await deleteZoneByCameraId(cameraId);
+      console.log(`✅ Removed traffic jam zone for camera ${cameraId} (${totalCount}/${camera.threshold})`);
+      
+      // Broadcast zone deletion to all users
+      broadcastToUsers({
+        type: 'zone-deleted',
+        zoneId: existingZone.id
+      });
     }
   } catch (error) {
     console.error('Error handling camera detection:', error);

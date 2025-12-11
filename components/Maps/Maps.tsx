@@ -41,6 +41,7 @@ interface Zone {
     riskLevel?: number;
     title?: string;
     description?: string;
+    cameraId?: string; // ID of camera that created this zone
 }
 
 interface Sensor {
@@ -271,11 +272,11 @@ export default function Maps({ isAdmin = false }: MapsProps) {
             try {
                 const message = JSON.parse(event.data);
                 
-                if (message.type === 'zone_created') {
+                if (message.type === 'zone_created' || message.type === 'zone-created') {
                     setZones(prev => [...prev, message.zone]);
                 } else if (message.type === 'zone_updated') {
                     setZones(prev => prev.map(z => z.id === message.zone.id ? message.zone : z));
-                } else if (message.type === 'zone_deleted') {
+                } else if (message.type === 'zone_deleted' || message.type === 'zone-deleted') {
                     setZones(prev => prev.filter(z => z.id !== message.zoneId));
                 } else if (message.type === 'zones_cleared') {
                     setZones([]);
