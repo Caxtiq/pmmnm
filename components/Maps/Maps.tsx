@@ -1001,6 +1001,11 @@ export default function Maps({ isAdmin = false }: MapsProps) {
             map.on('click', 'cameras-circle', handleCameraClick);
             map.on('mouseenter', 'cameras-circle', handleCameraHover);
             map.on('mouseleave', 'cameras-circle', handleCameraLeave);
+            
+            // Add hover handlers for camera lines too
+            map.on('click', 'camera-lines', handleCameraClick);
+            map.on('mouseenter', 'camera-lines', handleCameraHover);
+            map.on('mouseleave', 'camera-lines', handleCameraLeave);
         }
 
         return () => {
@@ -1012,6 +1017,9 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                 map.off('click', 'cameras-circle', () => {});
                 map.off('mouseenter', 'cameras-circle', () => {});
                 map.off('mouseleave', 'cameras-circle', () => {});
+                map.off('click', 'camera-lines', () => {});
+                map.off('mouseenter', 'camera-lines', () => {});
+                map.off('mouseleave', 'camera-lines', () => {});
             }
         };
     }, [map, userReports, isAdmin, cameras, setSelectedCamera]);
