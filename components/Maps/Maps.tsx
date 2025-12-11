@@ -925,6 +925,8 @@ export default function Maps({ isAdmin = false }: MapsProps) {
 
         // Add camera click handlers for admin
         if (isAdmin) {
+            let cameraPopup: any = null;
+
             const handleCameraClick = (e: any) => {
                 if (!e.features || e.features.length === 0) return;
                 const feature = e.features[0];
@@ -935,12 +937,65 @@ export default function Maps({ isAdmin = false }: MapsProps) {
                 }
             };
 
-            const handleCameraHover = () => {
+            const handleCameraHover = (e: any) => {
+                if (!e.features || e.features.length === 0) return;
                 map.getCanvas().style.cursor = 'pointer';
+                
+                const feature = e.features[0];
+                const props = feature.properties;
+                
+                // Remove existing popup if any
+                if (cameraPopup) {
+                    cameraPopup.remove();
+                }
+                
+                // Create a global function to open camera viewer
+                (window as any).openCameraViewer = (cameraId: string) => {
+                    const camera = cameras.find(c => c.id === cameraId);
+                    if (camera) {
+                        setSelectedCamera(camera);
+                    }
+                };
+                
+                cameraPopup = new vietmapgl.Popup({ 
+                    offset: 25, 
+                    closeButton: false, 
+                    closeOnClick: false 
+                })
+                    .setLngLat(e.lngLat)
+                    .setHTML(`
+                        <div style="min-width: 180px;">
+                            <h3 style="font-weight: bold; font-size: 14px; margin-bottom: 8px;">📹 ${props.name}</h3>
+                            <button 
+                                onclick="window.openCameraViewer('${props.id}')"
+                                style="
+                                    width: 100%;
+                                    padding: 6px 12px;
+                                    background-color: #8b5cf6;
+                                    color: white;
+                                    border: none;
+                                    border-radius: 6px;
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    cursor: pointer;
+                                    transition: background-color 0.2s;
+                                "
+                                onmouseover="this.style.backgroundColor='#7c3aed'"
+                                onmouseout="this.style.backgroundColor='#8b5cf6'"
+                            >
+                                👁️ Xem Camera
+                            </button>
+                        </div>
+                    `)
+                    .addTo(map);
             };
 
             const handleCameraLeave = () => {
                 map.getCanvas().style.cursor = '';
+                if (cameraPopup) {
+                    cameraPopup.remove();
+                    cameraPopup = null;
+                }
             };
 
             map.on('click', 'cameras-circle', handleCameraClick);
